@@ -62,6 +62,13 @@
 #include "tx-hal-R9M-868-f103c8.h"
 #endif
 
+#ifdef TX_DIY_E22_SELINK_F103CB
+#include "tx-hal-selink-e22-f103cb.h"
+#endif
+
+#ifdef RX_DIY_E22_SELINK_F103CB
+#include "rx-hal-selink-e22-f103cb.h"
+#endif
 
 //-------------------------------------------------------
 // Derived Defines

@@ -104,4 +104,16 @@
   //#define FREQUENCY_BAND_915_MHZ_FCC
 #endif
 
+#ifdef RX_DIY_E22_SELINK_F103CB
+  #define DEVICE_NAME "Selink RX"
+  #define DEVICE_IS_RECEIVER
+  #define DEVICE_HAS_SX126x
+  #define FREQUENCY_BAND_915_MHZ_FCC
+#endif
 
+#ifdef TX_DIY_E22_SELINK_F103CB
+  #define DEVICE_NAME "Selink TX"
+  #define DEVICE_IS_TRANSMITTER
+  #define DEVICE_HAS_SX126x
+  #define FREQUENCY_BAND_915_MHZ_FCC
+#endif
