@@ -10,11 +10,10 @@
 //-------------------------------------------------------
 // TX DIY E22 TEST BOARD  STM32F103CB
 //-------------------------------------------------------
-#define DEVICE_IS_TRANSMITTER
 
 #define DEVICE_HAS_IN
 //#define DEVICE_HAS_JRPIN5 // requires external diode-R network connected to OUT,IN,GND
-
+#define DEVICE_HAS_COM_OR_DEBUG // is selected by DEBUG_ENABLED define
 
 //-- Timers, Timing and such stuff
 
@@ -24,27 +23,31 @@
 #define SYSTICK_DELAY_MS(x)       (uint16_t)(((uint32_t)(x)*(uint32_t)1000)/SYSTICK_TIMESTEP)
 
 
+
+#define EE_START_PAGE             124 // 128 kB flash, 1 kB page
+
+
 //-- UARTS
-// UARTB = serial port					(use UART 1)
-// UARTC = debug port					(use UART 2)
-// UART = SPORT (pin5) on JR bay
-// UARTE = in port, SBus or whatever	(use UART 3)
+// UARTB = serial port
+// UARTC = USB (CLI) or debug port
+// UART = JR bay pin5 (SPORT)
+// UARTE = in port, SBus or whatever
 
 #define UARTB_USE_UART1 // serial
-#define UARTB_BAUD                57600
+#define UARTB_BAUD                TX_SERIAL_BAUDRATE
 #define UARTB_USE_TX
 #define UARTB_TXBUFSIZE           TX_SERIAL_TXBUFSIZE
 #define UARTB_USE_TX_ISR
 #define UARTB_USE_RX
 #define UARTB_RXBUFSIZE           TX_SERIAL_RXBUFSIZE
 
-#define UARTC_USE_UART2 // debug
+#define UARTC_USE_UART2 // COM (CLI)
 #define UARTC_BAUD                115200
 #define UARTC_USE_TX
-#define UARTC_TXBUFSIZE           256
+#define UARTC_TXBUFSIZE           TX_COM_TXBUFSIZE
 #define UARTC_USE_TX_ISR
-//#define UARTC_USE_RX
-//#define UARTC_RXBUFSIZE           512
+#define UARTC_USE_RX
+#define UARTC_RXBUFSIZE           TX_COM_RXBUFSIZE
 
 #ifdef DEVICE_HAS_IN
 //#define UARTE_USE_UART1_REMAPPED // SBus
@@ -57,23 +60,29 @@
 #define UARTE_RXBUFSIZE           512
 #endif
 #ifdef DEVICE_HAS_JRPIN5
-//#define UART_USE_UART1_REMAPPED // MBridge
-#define UART_USE_UART1 // MBridge
-#define UART_BAUD                 400000 // 115200
+#define UART_USE_UART2 // JR pin5, MBridge
+#define UART_BAUD                 400000
 #define UART_USE_TX
 #define UART_TXBUFSIZE            512
 #define UART_USE_TX_ISR
 #define UART_USE_RX
 #define UART_RXBUFSIZE            512
 
-#define MBRIDGE_TX_XOR            IO_PB3
-#define MBRIDGE_TX_SET_NORMAL     gpio_low(MBRIDGE_TX_XOR)
-#define MBRIDGE_TX_SET_INVERTED   gpio_high(MBRIDGE_TX_XOR)
-
-#define MBRIDGE_RX_XOR            IO_PA15
-#define MBRIDGE_RX_SET_NORMAL     gpio_low(MBRIDGE_RX_XOR)
-#define MBRIDGE_RX_SET_INVERTED   gpio_high(MBRIDGE_RX_XOR)
+#define JRPIN5_TX_XOR             IO_PB9
+#define JRPIN5_TX_SET_NORMAL      gpio_low(JRPIN5_TX_XOR)
+#define JRPIN5_TX_SET_INVERTED    gpio_high(JRPIN5_TX_XOR)
+#define JRPIN5_RX_XOR             IO_PC15
+#define JRPIN5_RX_SET_NORMAL      gpio_low(JRPIN5_RX_XOR)
+#define JRPIN5_RX_SET_INVERTED    gpio_high(JRPIN5_RX_XOR)
 #endif
+
+#define UARTF_USE_UART2 // debug
+#define UARTF_BAUD                115200
+#define UARTF_USE_TX
+#define UARTF_TXBUFSIZE           512
+#define UARTF_USE_TX_ISR
+//#define UARTF_USE_RX
+//#define UARTF_RXBUFSIZE           512
 
 
 //-- SX1: SX12xx & SPI
@@ -103,9 +112,7 @@ void sx_init_gpio(void)
 {
   gpio_init(SX_RESET, IO_MODE_OUTPUT_PP_HIGH, IO_SPEED_VERYFAST);
   gpio_init(SX_DIO1, IO_MODE_INPUT_PD, IO_SPEED_VERYFAST);
-#ifdef SX_BUSY
   gpio_init(SX_BUSY, IO_MODE_INPUT_PU, IO_SPEED_VERYFAST);
-#endif
   gpio_init(SX_TX_EN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_VERYFAST);
   gpio_init(SX_RX_EN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_VERYFAST);
 }
@@ -115,12 +122,10 @@ bool sx_dio_read(void)
   return (gpio_read_activehigh(SX_DIO1)) ? true : false;
 }
 
-#ifdef SX_BUSY
 bool sx_busy_read(void)
 {
   return (gpio_read_activehigh(SX_BUSY)) ? true : false;
 }
-#endif
 
 void sx_amp_transmit(void)
 {
@@ -197,26 +202,21 @@ bool button_pressed(void)
 #define LED_GREEN 		          IO_PB12
 #define LED_RED		              IO_PB13
 
-#define LED_GREEN_ON              gpio_low(LED_GREEN)
-#define LED_RED_ON                gpio_low(LED_RED)
-
-#define LED_GREEN_OFF             gpio_high(LED_GREEN)
-#define LED_RED_OFF               gpio_high(LED_RED)
-
-#define LED_GREEN_TOGGLE          gpio_toggle(LED_GREEN)
-#define LED_RED_TOGGLE            gpio_toggle(LED_RED)
-
-#define LED_RIGHT_GREEN_ON        // not available
-#define LED_RIGHT_GREEN_OFF       // not available
-
 void leds_init(void)
 {
   gpio_init(LED_GREEN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_DEFAULT);
   gpio_init(LED_RED, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_DEFAULT);
-  LED_GREEN_OFF;
-  LED_RED_OFF;
+  gpio_low(LED_GREEN); // LED_GREEN_OFF
+  gpio_low(LED_RED); // LED_RED_OFF
 }
 
+void led_green_off(void) { gpio_low(LED_GREEN); }
+void led_green_on(void) { gpio_high(LED_GREEN); }
+void led_green_toggle(void) { gpio_toggle(LED_GREEN); }
+
+void led_red_off(void) { gpio_low(LED_RED); }
+void led_red_on(void) { gpio_high(LED_RED); }
+void led_red_toggle(void) { gpio_toggle(LED_RED); }
 
 //-- Position Switch
 
@@ -240,31 +240,24 @@ const rfpower_t rfpower_list[] = {
     { .dbm = POWER_30_DBM, .mW = 1000 },
 };
 
-#define RFPOWER_OPTSTR  "1 mW,10 mW,100 mW,500 mW,1000 mW"
 
 //-- TEST
 
 #define PORTA_N  9
 
-uint32_t porta[PORTA_N] = {
-    LL_GPIO_PIN_0, LL_GPIO_PIN_1, LL_GPIO_PIN_2, LL_GPIO_PIN_3,
-    LL_GPIO_PIN_4, LL_GPIO_PIN_5, LL_GPIO_PIN_6, LL_GPIO_PIN_7,
-    LL_GPIO_PIN_15,
+uint32_t porta[] = {
+    LL_GPIO_PIN_0, LL_GPIO_PIN_1, LL_GPIO_PIN_2, LL_GPIO_PIN_3, LL_GPIO_PIN_4, LL_GPIO_PIN_5, LL_GPIO_PIN_6, LL_GPIO_PIN_7,
+    LL_GPIO_PIN_8, LL_GPIO_PIN_9, LL_GPIO_PIN_10, LL_GPIO_PIN_15,
 };
 
-#define PORTB_N  12
-
-uint32_t portb[PORTB_N] = {
-    LL_GPIO_PIN_0, LL_GPIO_PIN_1, LL_GPIO_PIN_3,
-    LL_GPIO_PIN_4, LL_GPIO_PIN_5, LL_GPIO_PIN_6, LL_GPIO_PIN_7,
-    LL_GPIO_PIN_10, LL_GPIO_PIN_11, LL_GPIO_PIN_12, LL_GPIO_PIN_13,
-    LL_GPIO_PIN_15,
+uint32_t portb[] = {
+    LL_GPIO_PIN_0, LL_GPIO_PIN_1, LL_GPIO_PIN_3, LL_GPIO_PIN_4, LL_GPIO_PIN_5, LL_GPIO_PIN_6,
+    LL_GPIO_PIN_8, LL_GPIO_PIN_9, LL_GPIO_PIN_10, LL_GPIO_PIN_11,
+    LL_GPIO_PIN_12, LL_GPIO_PIN_13, LL_GPIO_PIN_14, LL_GPIO_PIN_15,
 };
 
-#define PORTC_N  1
-
-uint32_t portc[PORTC_N] = {
-    LL_GPIO_PIN_13,
+uint32_t portc[] = {
+    LL_GPIO_PIN_13, LL_GPIO_PIN_14, LL_GPIO_PIN_15,
 };
 
 
