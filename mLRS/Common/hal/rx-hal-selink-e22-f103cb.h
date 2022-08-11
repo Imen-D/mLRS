@@ -10,8 +10,8 @@
 //-------------------------------------------------------
 // RX DIY E22 TEST BOARD  STM32F103CB
 //-------------------------------------------------------
-#define DEVICE_IS_RECEIVER
 
+#define DEVICE_HAS_OUT
 
 //-- Timers, Timing and such stuff
 
@@ -21,23 +21,26 @@
 #define SYSTICK_DELAY_MS(x)       (uint16_t)(((uint32_t)(x)*(uint32_t)1000)/SYSTICK_TIMESTEP)
 
 
+
+#define EE_START_PAGE             124 // 128 kB flash, 1 kB page
+
 //-- UARTS
 // UARTB = serial port
 // UARTC = debug port
 // UART = output port, SBus or whatever
 
 #define UARTB_USE_UART1 // serial
-#define UARTB_BAUD                SETUP_RX_SERIAL_BAUDRATE
+#define UARTB_BAUD                RX_SERIAL_BAUDRATE
 #define UARTB_USE_TX
-#define UARTB_TXBUFSIZE           RX_SERIAL_TXBUFSIZE
+#define UARTB_TXBUFSIZE           RX_SERIAL_TXBUFSIZE // 1024 // 512
 #define UARTB_USE_TX_ISR
 #define UARTB_USE_RX
-#define UARTB_RXBUFSIZE           RX_SERIAL_RXBUFSIZE
+#define UARTB_RXBUFSIZE           RX_SERIAL_RXBUFSIZE // 1024 // 512
 
 #define UARTC_USE_UART3 // debug
 #define UARTC_BAUD                115200
 #define UARTC_USE_TX
-#define UARTC_TXBUFSIZE           256
+#define UARTC_TXBUFSIZE           512
 #define UARTC_USE_TX_ISR
 //#define UARTC_USE_RX
 //#define UARTC_RXBUFSIZE           512
@@ -132,7 +135,6 @@ void sx_dio_enable_exti_isr(void)
 
 //-- SBus output pin
 
-#define OUT                       IO_PA2 // UART1 TX
 #define OUT_XOR                   IO_PA15
 
 void out_init_gpio(void)
@@ -172,22 +174,21 @@ bool button_pressed(void)
 #define LED_GREEN 		          IO_PB12
 #define LED_RED		              IO_PB13
 
-#define LED_GREEN_ON              gpio_low(LED_GREEN)
-#define LED_RED_ON                gpio_low(LED_RED)
-
-#define LED_GREEN_OFF             gpio_high(LED_GREEN)
-#define LED_RED_OFF               gpio_high(LED_RED)
-
-#define LED_GREEN_TOGGLE          gpio_toggle(LED_GREEN)
-#define LED_RED_TOGGLE            gpio_toggle(LED_RED)
-
 void leds_init(void)
 {
   gpio_init(LED_GREEN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_DEFAULT);
   gpio_init(LED_RED, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_DEFAULT);
-  LED_GREEN_OFF;
-  LED_RED_OFF;
+  gpio_low(LED_GREEN); // LED_GREEN_OFF
+  gpio_low(LED_RED); // LED_RED_OFF
 }
+
+void led_green_off(void) { gpio_low(LED_GREEN); }
+void led_green_on(void) { gpio_high(LED_GREEN); }
+void led_green_toggle(void) { gpio_toggle(LED_GREEN); }
+
+void led_red_off(void) { gpio_low(LED_RED); }
+void led_red_on(void) { gpio_high(LED_RED); }
+void led_red_toggle(void) { gpio_toggle(LED_RED); }
 
 
 //-- POWER
@@ -205,32 +206,25 @@ const rfpower_t rfpower_list[] = {
     { .dbm = POWER_30_DBM, .mW = 1000 },
 };
 
-#define POWER_RANGE_TEST          POWER_0_DBM
-
-#define RFPOWER_OPTSTR  "1 mW,10 mW,100 mW,500 mW,1000 mW"
 
 //-- TEST
 
-#define PORTA_N  9
-
-uint32_t porta[PORTA_N] = {
+uint32_t porta[] = {
     LL_GPIO_PIN_0, LL_GPIO_PIN_1, LL_GPIO_PIN_2, LL_GPIO_PIN_3,
     LL_GPIO_PIN_4, LL_GPIO_PIN_5, LL_GPIO_PIN_6, LL_GPIO_PIN_7,
+    LL_GPIO_PIN_8, LL_GPIO_PIN_9, LL_GPIO_PIN_10, LL_GPIO_PIN_11,
     LL_GPIO_PIN_15,
 };
 
-#define PORTB_N  12
-
-uint32_t portb[PORTB_N] = {
-    LL_GPIO_PIN_0, LL_GPIO_PIN_1, LL_GPIO_PIN_3,
-    LL_GPIO_PIN_4, LL_GPIO_PIN_5, LL_GPIO_PIN_6, LL_GPIO_PIN_7,
-    LL_GPIO_PIN_10, LL_GPIO_PIN_11, LL_GPIO_PIN_12, LL_GPIO_PIN_13,
-    LL_GPIO_PIN_15,
+uint32_t portb[] = {
+    LL_GPIO_PIN_0, LL_GPIO_PIN_1,
+    LL_GPIO_PIN_3, LL_GPIO_PIN_4,
+    LL_GPIO_PIN_6, LL_GPIO_PIN_7,
+    LL_GPIO_PIN_10, LL_GPIO_PIN_11,
+    LL_GPIO_PIN_12, LL_GPIO_PIN_13, LL_GPIO_PIN_14, LL_GPIO_PIN_15,
 };
 
-#define PORTC_N  1
-
-uint32_t portc[PORTC_N] = {
+uint32_t portc[] = {
     LL_GPIO_PIN_13,
 };
 
