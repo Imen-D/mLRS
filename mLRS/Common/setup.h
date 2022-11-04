@@ -195,6 +195,8 @@ void setup_sanitize(void)
     uint8_t frequency_band_default = SETUP_FREQUENCY_BAND_868_MHZ;
 #elif defined FREQUENCY_BAND_868_915_MHZ
     uint8_t frequency_band_default = SETUP_FREQUENCY_BAND_868_MHZ; // my privilege to be in the EU :)
+#elif defined FREQUENCY_BAND_433_MHZ
+    uint8_t frequency_band_default = SETUP_FREQUENCY_BAND_433_MHZ;
 #else
     #error Unknown Frequencyband !
 #endif
@@ -384,6 +386,8 @@ void setup_configure(void)
     case SETUP_FREQUENCY_BAND_868_MHZ:
         Config.FhssNum = FHSS_NUM_BAND_868_MHZ;
         break;
+    case SETUP_FREQUENCY_BAND_433_MHZ:
+    	Config.FhssNum = FHSS_NUM_BAND_433_MHZ;
     default:
         while (1) {} // must not happen, should have been resolved in setup_sanitize()
     }

@@ -32,9 +32,9 @@
 //#define SETUP_FORCE_COMMON_CONF
 
 
-#define CPOWER                          0 // 0: minimum power, 255: maximum power
+//#define CPOWER                          0 // 0: minimum power, 255: maximum power
 //#define CPOWER                          255 // 0: minimum power, 255: maximum power
-
+#define CPOWER                          POWER_30_DBM
 #define DIVERSITY                       0
 
 
@@ -101,6 +101,7 @@
 #define MODE_31HZ_SEND_FRAME_TMO        15 // just needs to be larger than toa, not critical
 #define MODE_19HZ_SEND_FRAME_TMO        25 // just needs to be larger than toa, not critical
 
+#define FHSS_NUM_BAND_433_MHZ           3
 #define FHSS_NUM_BAND_868_MHZ           6 // it's a very narrow band
 #define FHSS_NUM_BAND_915_MHZ_FCC       12 // was 24, but a cycle takes then 1.3 sec! would need long disconnect
 #define FHSS_NUM_BAND_2P4_GHZ_19HZ_MODE 12 // was 24, but a cycle takes then 1.3 sec! would need long disconnect
