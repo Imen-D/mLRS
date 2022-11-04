@@ -20,9 +20,10 @@ v0.0.00:
 #define CLOCK_IRQ_PRIORITY          10
 #define UARTB_IRQ_PRIORITY          11 // serial
 #define UARTC_IRQ_PRIORITY          11 // debug
-#define UART_IRQ_PRIORITY           12 // SBus out pin
+#define UART_IRQ_PRIORITY           12 // out pin
 #define SX_DIO_EXTI_IRQ_PRIORITY    13
 #define SX2_DIO_EXTI_IRQ_PRIORITY   13
+#define SWUART_TIM_IRQ_PRIORITY     11 // debug on swuart
 #define BUZZER_TIM_IRQ_PRIORITY     14
 
 #include "../Common/common_conf.h"
@@ -30,8 +31,11 @@ v0.0.00:
 #include "../Common/hal/glue.h"
 #include "../modules/stm32ll-lib/src/stdstm32.h"
 #include "../modules/stm32ll-lib/src/stdstm32-peripherals.h"
-#include "../Common/sx-drivers/sx12xx.h"
+#ifdef STM32WL
+#include "../modules/stm32ll-lib/src/stdstm32-subghz.h"
+#endif
 #include "../Common/hal/hal.h"
+#include "../Common/sx-drivers/sx12xx.h"
 #include "../modules/stm32ll-lib/src/stdstm32-delay.h" // these are dependent on hal
 #include "../modules/stm32ll-lib/src/stdstm32-eeprom.h"
 #include "../modules/stm32ll-lib/src/stdstm32-spi.h"
@@ -41,11 +45,18 @@ v0.0.00:
 #ifdef USE_SERIAL
 #include "../modules/stm32ll-lib/src/stdstm32-uartb.h"
 #endif
-#ifdef USE_DEBUG
-#include "../modules/stm32ll-lib/src/stdstm32-uartc.h"
-#endif
 #ifdef USE_OUT
 #include "../modules/stm32ll-lib/src/stdstm32-uart.h"
+#endif
+#ifdef USE_DEBUG
+#ifdef DEVICE_HAS_DEBUG_SWUART
+#include "../modules/stm32ll-lib/src/stdstm32-uart-sw.h"
+#else
+#include "../modules/stm32ll-lib/src/stdstm32-uartc.h"
+#endif
+#endif
+#ifdef USE_I2C
+#include "../modules/stm32ll-lib/src/stdstm32-i2c.h"
 #endif
 #define FASTMAVLINK_IGNORE_WADDRESSOFPACKEDMEMBER
 #include "../Common/mavlink/out/mlrs/mlrs.h"
@@ -57,14 +68,13 @@ v0.0.00:
 #include "clock.h"
 #include "out.h"
 #include "rxstats.h"
-#include "../Common/buzzer.h"
 
 
 ClockBase clock;
 RxStatsBase rxstats;
-tBuzzer buzzer;
 
 
+// is required in bind.h
 void clock_reset(void) { clock.Reset(); }
 
 
@@ -80,15 +90,6 @@ class Out : public OutBase
     }
 
 #if defined DEVICE_HAS_OUT || defined DEVICE_HAS_OUT_NORMAL
-    bool config_sbus(bool enable_flag) override
-    {
-        if (enable_flag) {
-            uart_setprotocol(100000, XUART_PARITY_EVEN, UART_STOPBIT_2);
-            out_set_inverted();
-        }
-        return true;
-    }
-
     bool config_crsf(bool enable_flag) override
     {
         if (enable_flag) {
@@ -97,14 +98,23 @@ class Out : public OutBase
         }
         return true;
     }
-#endif
 
-#if defined DEVICE_HAS_OUT || defined DEVICE_HAS_OUT_INVERTED
     bool config_sbus_inverted(bool enable_flag) override
     {
         if (enable_flag) {
             uart_setprotocol(100000, XUART_PARITY_EVEN, UART_STOPBIT_2);
             out_set_normal();
+        }
+        return true;
+    }
+#endif
+
+#if defined DEVICE_HAS_OUT || defined DEVICE_HAS_OUT_INVERTED
+    bool config_sbus(bool enable_flag) override
+    {
+        if (enable_flag) {
+            uart_setprotocol(100000, XUART_PARITY_EVEN, UART_STOPBIT_2);
+            out_set_inverted();
         }
         return true;
     }
@@ -138,6 +148,9 @@ class Out : public OutBase
         }
         OutBase::SendLinkStatistics(&lstats);
     }
+#else
+    void Init(void) {}
+    void SendLinkStatistics(void) {}
 #endif
 };
 
@@ -156,11 +169,12 @@ void init(void)
     out.Init();
 
     buzzer.Init();
+    fan.Init();
     dbg.Init();
 
     setup_init();
 
-    clock.Init(); // clock needs Config, so call after setup_init()
+    clock.Init(Config.frame_rate_ms); // clock needs Config, so call after setup_init()
 
     sx.Init(); // sx needs Config, so call after setup_init()
     sx2.Init();
@@ -190,7 +204,7 @@ volatile uint16_t irq2_status;
 IRQHANDLER(
 void SX_DIO_EXTI_IRQHandler(void)
 {
-    LL_EXTI_ClearFlag_0_31(SX_DIO_EXTI_LINE_x);
+    sx_dio_exti_isr_clearflag();
     irq_status = sx.GetAndClearIrqStatus(SX12xx_IRQ_ALL);
     if (irq_status & SX12xx_IRQ_RX_DONE) {
         if (bind.IsInBind()) {
@@ -208,7 +222,7 @@ void SX_DIO_EXTI_IRQHandler(void)
 IRQHANDLER(
 void SX2_DIO_EXTI_IRQHandler(void)
 {
-    LL_EXTI_ClearFlag_0_31(SX2_DIO_EXTI_LINE_x);
+    sx2_dio_exti_isr_clearflag();
     irq2_status = sx2.GetAndClearIrqStatus(SX12xx_IRQ_ALL);
     if (irq2_status & SX12xx_IRQ_RX_DONE) {
         if (bind.IsInBind()) {
@@ -561,9 +575,10 @@ RESTARTCONTROLLER:
 
   rxstats.Init(Config.LQAveragingPeriod);
 
-  out.Configure(Setup.Rx.OutMode, Setup.Rx.OutRssiChannelMode, Setup.Rx.FailsafeMode);
+  out.Configure(Setup.Rx.OutMode);
   mavlink.Init();
   sx_serial.Init();
+  fan.SetPower(sx.RfPower_dbm());
 
   led_blink = 0;
   tick_1hz = 0;
@@ -805,6 +820,7 @@ dbg.puts(s8toBCD_s(stats.last_rx_rssi2));*/
           connect_listen_cnt = 0;
           link_state = LINK_STATE_RECEIVE; // switch back to RX
         }
+        if (fhss.HopToNextBind()) { link_state = LINK_STATE_RECEIVE; } // switch back to RX
       }
 
       // we just disconnected, or are in sync but don't receive anything
@@ -845,7 +861,7 @@ dbg.puts(s8toBCD_s(stats.last_rx_rssi2));*/
         rxstats.Update1Hz();
       }
 
-      if (connect_state < CONNECT_STATE_SYNC) link_task_reset();
+      if (connect_state == CONNECT_STATE_LISTEN) link_task_reset();
 
       if (Setup.Rx.Buzzer == BUZZER_LOST_PACKETS && connect_occured_once && !bind.IsInBind()) {
         if (!valid_frame_received) buzzer.BeepLP();
@@ -857,13 +873,16 @@ dbg.puts(s8toBCD_s(stats.last_rx_rssi2));*/
         bind.ConfigForBind();
         CLOCK_PERIOD_10US = ((uint16_t)Config.frame_rate_ms * 100);
         clock.Reset();
-        fhss.SetToBind();
+        fhss.SetToBind(Config.frame_rate_ms);
         LED_GREEN_ON;
         LED_RED_OFF;
         connect_state = CONNECT_STATE_LISTEN;
         link_state = LINK_STATE_RECEIVE;
         break;
-      case BIND_TASK_RX_STORE_PARAMS: doParamsStore = true; break;
+      case BIND_TASK_RX_STORE_PARAMS:
+        Setup.FrequencyBand = fhss.GetCurrFrequencyBand();
+        doParamsStore = true;
+        break;
       }
 
       doPostReceive2_cnt = 5; // allow link_state changes to be handled, so postpone this few loops
@@ -882,22 +901,24 @@ dbg.puts(s8toBCD_s(stats.last_rx_rssi2));*/
       if (connected()) {
         out.SendRcData(&rcData, frame_missed, false, stats.GetLastRxRssi());
         out.SendLinkStatistics();
+        mavlink.SendRcData(out.GetRcDataPtr(), false);
       } else {
         if (connect_occured_once) {
           // generally output a signal only if we had a connection at least once
           out.SendRcData(&rcData, true, true, RSSI_MIN);
           out.SendLinkStatisticsDisconnected();
+          mavlink.SendRcData(out.GetRcDataPtr(), true);
         }
       }
     }//end of if(doPostReceive2)
 
     out.Do(micros());
 
-    //-- do mavlink
+    //-- Do mavlink
 
     mavlink.Do();
 
-    //-- store parameters
+    //-- Store parameters
 
     if (doParamsStore) {
       LED_RED_ON; LED_GREEN_ON;

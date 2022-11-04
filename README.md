@@ -67,7 +67,9 @@ Further features:
 - the transmitter and receiver parameters can be set via a LUA script or a CLI.
 - bind mode for binding "unknown" receivers to the transmitter.
 - support for buzzer, oled & five-way button, serial2. 
-- the Tx and Rx modules can be configured through the parameters for a wide range of applications and use cases. For a pictoral representation of some typical examples see [mLRS Setup examples](https://www.rcgroups.com/forums/showpost.php?p=48821735&postcount=332).
+- the Tx and Rx modules can be configured through the parameters for a wide range of applications and use cases. For a pictoral representation of some typical examples see [mLRS Setup examples](https://www.rcgroups.com/forums/showpost.php?p=48821735&postcount=332), and for more details [Documentation](#further-documentations).
+- support of CRSF and ArduPilot Passthrough protocol; enables using the Yaapu Telemetry app on standard radios (no need for extra dongles anymore).
+- support of plenty platforms: STM32F103, STM32G4, STM32L4, Wio-E5, STM32WLE5, E28, E22, SX1280, SX1262, SX1276.
 
 ## Community ##
 
@@ -85,6 +87,25 @@ The range which one may expect can be estimated from the standard math; the [Imm
 | 868/915 MHz | - | 26 km | 42 km
 
 Only very few range testes were reported so far (and only for 2.4 GHz/50 Hz). They are however consistent with the estimated ranges. Also note that mLRS supports full diversity, which when enabled has been found to significantly improve performance at lower link budget, i.e., allow to operate at even larger ranges.
+
+## Hardware ##
+
+Hardware is a problem currently. One might be tempted to think that all the recent commercial ExpressLRS hardware should be good platforms, but this is unfortuantely not so. The ESP's they use simply do not offer the peripherals which are desired for mLRS Tx modules, hence I started with STM32 as main platform. I am not against ESP however, to the contrary. So if anyone wants to add ESP32 support please join.
+
+The code currently supports:
+- Frsky R9M transmitter and R9MX and R9MM receiver modules
+- SeeedStudio Wio-E5 Mini and Grove Wio-E5 boards
+- several DIY boards you can find in https://github.com/olliw42/mLRS-hardware
+
+In the 915/868 MHz range, the Frsky R9M & R9MX system provides a simple and readily available entry to mLRS. In this sense it is the best option available currently. Its big disadvantage is however that the receiver's transmission power is quite low and telemetry range thus relatively short. This can be mitigated by using the R9M module as receiver, which is supported by mLRS. The SeeedStudio Wio-E5 boards are also readily available, and hence excellent options too to enter mLRS. They are based on the STM32WL5E chip and thus provide all the advantages of the SX1262, like the 31 Hz mode. Their maximum power is 22 dBm.
+
+In the 2.4 GHz range, the DIY options are currently the (only) way to go.
+
+Don't hesitate to join the discussion thread at rcgroups for more details.
+
+## Firmware: Flashing ##
+
+Ready-to-flash firmware can be found in the "firmware" folder. All you need to do is to flash the .hex file appropriate for your target into the device (it is not required to install the software for compiling as described in the next chapter). The Tx module can then be configured to your needs via the CLI or via the mLRS Configuration lua script. The Rx module is configured by first binding it to the Tx module, and then configuring it through the Tx module, exactly like the Tx module is configured
 
 ## Software: Installation Bits and Bops ##
 
@@ -122,57 +143,13 @@ In case of issues with this procedure, don't hesitate to join the discussion thr
 
 You need to have git and python3 installed.
 
-## Hardware ##
+## Further Documentation ##
 
-Hardware is a problem currently. One might be tempted to think that all the recent commercial ExpressLRS hardware should be good platforms, but this is unfortuantely not so. The ESP's they use simply do not offer the peripherals which are desired for mLRS TX modules, hence I started with STM32 as main platform. I am not against ESP however, to the contrary. So if anyone wants to add ESP32 support please join.
+You find more information in the [mLRS Documentation](https://github.com/olliw42/mLRS-docu/blob/master/README.md).
 
-The code so far supports:
-- Frsky R9M transmitter and R9MX and R9MM receiver modules
-- Siyi FM30 system (early version only, those with STM32 chips; the TX module needs few small hardware modifications, see https://github.com/olliw42/mLRS/issues/4#issuecomment-1030601900)
-- several DIY boards you can find in https://github.com/olliw42/mLRS-hardware
+Direct links to few selected pages:
 
-In the 915/868 MHz range, the Frsky R9M & R9MX system provides a simple and readily available entry to mLRS. In this sense it is the best option available currently. Its big disadvantage is however that the receiver's transmission power is quite low and telemetry range thus relatively short. In the 2.4 GHz range, the DIY options are currently the way to go.
-
-Don't hesitate to join the discussion thread at rcgroups for more details.
-
-## CLI Commands ##
-
-When the transmitter is not flashed with the MAVLink for OpenTx firmware, the CLI is currently the main and sole method for configuring the transmitter and receiver module.
-
-The CLI commands consist of one or more strings, each separated by a blank, and a terminating character. The terminating character can be a '\r' (carriage return), '\n' (line feed), ',' or ';'. The line feed handling depends very much on the terminal which is being used and/or its configuration. Hence, it is good practice to just always terminate the CLI command with, e.g., a ';' (this will be done for the commands listed here). 
-
-#### Commands ####
-
-h; or help; or ?;<br>
-Lists the available commands, with a very brief description
-
-pl;<br>
-Lists all parameters and their settings. Comment: The parameters of the receiver are listed only if a receiver is connected, else a warning messages is printed.
-
-pl c;<br>
-Lists the shared parameters, i.e., those parameters which are common for both the Tx module and the receiver, and their settings. Comment: If a receiver is not connected, a warning messages is printed.
-
-pl tx;<br>
-Lists the parameters of the Tx module and their settings. 
-
-pl rx;<br>
-Lists the parameters of the receiver and their settings. Comment: These parameters are listed only if a receiver is connected, else a warning message is printed.
-
-p name; or p name = ?;<br>
-Prints the setting of the parameter with name 'name'. Comment: Blanks in the parameter name should be replaced by '_'. E.g., the setting for the parameter "Tx Power" would be obtained with the CLI command p tx_power;.
-
-p name = value;<br>
-Changes the setting of the parameter with name 'name' to the specified value. Comment: Blanks in the parameter name should be replaced by '_'. E.g., the setting for the parameter "Tx Power" would be changed to zero with the CLI command p tx_power = 0;.
-
-pstore;<br>
-Stores the new parameter settings into the Tx module and, if connected, also into the receiver.
-
-bind;<br>
-Starts the binding. Comment: Only the Tx module is set into binding mode. The receiver must be put into binding mode by pressing its bind button.
-
-reload;<br>
-Reloads the current parameter values from the Tx and, if connected, the receiver.
-
-stats;<br>
-Starts streaming some statistics. Terminate by sending any character.
-
+- [Binding](https://github.com/olliw42/mLRS-docu/blob/master/docs/BINDING.md)
+- [Configuration Parameters](https://github.com/olliw42/mLRS-docu/blob/master/docs/PARAMETERS.md)
+- [mLRS Configuration Lua Script](https://github.com/olliw42/mLRS-docu/blob/master/docs/LUA.md)
+- [CLI Commands](https://github.com/olliw42/mLRS-docu/blob/master/docs/CLI.md)

@@ -21,6 +21,8 @@
 #include "common_stats.h"
 #include "bind.h"
 #include "fail.h"
+#include "buzzer.h"
+#include "fan.h"
 
 
 //-------------------------------------------------------
@@ -75,11 +77,15 @@ class tSerialPort : public tSerialBase
 };
 
 
-// is always uartc
+// is uartc on rx / uartf on tx (or swuart)
 class tDebugPort : public tSerialBase
 {
 #ifdef USE_DEBUG
   public:
+#ifdef DEVICE_HAS_DEBUG_SWUART
+    void Init(void) { swuart_init(); }
+    void putc(char c) override { swuart_putc(c); }
+#else
 #ifdef DEVICE_IS_RECEIVER
     void Init(void) { uartc_init(); }
     void putc(char c) override { uartc_putc(c); }
@@ -87,6 +93,7 @@ class tDebugPort : public tSerialBase
 #ifdef DEVICE_IS_TRANSMITTER
     void Init(void) { uartf_init(); }
     void putc(char c) override { uartf_putc(c); }
+#endif
 #endif
 #endif
 };
@@ -156,6 +163,9 @@ Stats stats;
 FhssBase fhss;
 
 BindBase bind;
+
+tBuzzer buzzer;
+tFan fan;
 
 
 //-------------------------------------------------------
@@ -257,5 +267,7 @@ STATIC_ASSERT(sizeof(tRxCmdFrameRxSetupData) == FRAME_RX_PAYLOAD_LEN, "tRxCmdFra
 STATIC_ASSERT(sizeof(tTxSetup) == 20, "tTxSetup len missmatch")
 STATIC_ASSERT(sizeof(tRxSetup) == 36, "tRxSetup len missmatch")
 STATIC_ASSERT(sizeof(tSetup) == 38+20+36+8+2, "tSetup len missmatch")
+
+STATIC_ASSERT(sizeof(fhss_config) == sizeof(tFhssConfig) * FHSS_CONFIG_NUM, "fhss_config size missmatch")
 
 #endif // COMMON_H

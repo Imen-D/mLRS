@@ -17,7 +17,7 @@
 #define ARRAY_LEN(x)  sizeof(x)/sizeof(x[0])
 
 #ifndef PACKED
-#  define PACKED(__Declaration__)  __Declaration__ __attribute__((packed)) //that's for __GNUC__
+#  define PACKED(__Declaration__)  __Declaration__ __attribute__((packed)) // that's for __GNUC__
 #endif
 
 
@@ -25,14 +25,16 @@ typedef enum {
     POWER_MIN       = INT8_MIN,
     POWER_m18_DBM   = -18, // 16 uW
     POWER_m10_DBM   = -10, // 100 uW
+    POWER_m9_DBM    = -9, // 126 uW
     POWER_0_DBM     = 0, // 1 mW
+    POWER_3_DBM     = 3, // 2 mW
     POWER_10_DBM    = 10, // 10 mW
     POWER_12_DBM    = 12, // 16 mW
     POWER_12p5_DBM  = 13, // 18 mW
     POWER_17_DBM    = 17, // 50 mW
     POWER_20_DBM    = 20, // 100 mW
-    POWER_22_DBM    = 22, // 159 mW
-    POWER_23_DBM    = 24, // 200 mW
+    POWER_22_DBM    = 22, // 158 mW
+    POWER_23_DBM    = 23, // 200 mW
     POWER_24_DBM    = 24, // 251 mW
     POWER_27_DBM    = 27, // 501 mW
     POWER_30_DBM    = 30, // 1000 mW
@@ -107,6 +109,30 @@ uint8_t rssi_i8_to_ap(int8_t rssi_i8);
 uint16_t rssi_i8_to_ap_sbus(int8_t rssi_i8);
 
 
+//-- rc data
+
+#define RC_DATA_LEN     18
+
+#define RC_DATA_MIN     1
+#define RC_DATA_CENTER  1024
+#define RC_DATA_MAX     2047
+
+typedef struct
+{
+    uint16_t ch[RC_DATA_LEN]; // 1 .. 1024 .. 2047 = -120% .. 120%, 11 bits
+} tRcData;
+
+// clip a value for rcData to range
+uint16_t clip_rc(int32_t x);
+
+uint16_t rc_from_sbus(uint16_t sbus_ch);
+uint16_t rc_from_crsf(uint16_t crsf_ch);
+uint16_t rc_to_sbus(uint16_t rc_ch);
+uint16_t rc_to_crsf(uint16_t rc_ch);
+uint16_t rc_to_mavlink(uint16_t rc_ch);
+int16_t rc_to_mavlink_13bcentered(uint16_t rc_ch);
+
+
 //-- crsf
 
 uint8_t crsf_cvt_power(int8_t power_dbm);
@@ -117,6 +143,7 @@ uint8_t crsf_cvt_rssi(int8_t rssi_i8);
 
 //-- bind phrase & version
 
+bool is_valid_bindphrase_char(char c);
 void sanitize_bindphrase(char* bindphrase);
 uint32_t u32_from_bindphrase(char* bindphrase);
 
@@ -139,10 +166,6 @@ typedef enum {
 
 
 //-- auxiliary functions
-
-// clip a value for rcData to range
-
-uint16_t clip_rc(int32_t x);
 
 void strbufstrcpy(char* res, const char* src, uint16_t len);
 void strstrbufcpy(char* res, const char* src, uint16_t len);

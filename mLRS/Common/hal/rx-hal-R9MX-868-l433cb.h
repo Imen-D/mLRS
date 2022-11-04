@@ -19,18 +19,14 @@
 //   Pin4 Inv SPort   PB11
 //   Pin5 SBusOut     PA2 inverted
 //   Pin6 SBusIn      ???
-//   Ch1    PA11
-//   Ch2    PA10 / U1Rx
-//   Ch3    PA9 / U1Tx
-//   Ch4    PA8
+//   Ch1    PA11          -> Debug TX
+//   Ch2    PA10 / U1Rx   -> Serial Rx
+//   Ch3    PA9 / U1Tx    -> Serial Tx
+//   Ch4    PA8           -> Buzzer
 
 #define DEVICE_HAS_OUT
-#define DEVICE_HAS_SERIAL_OR_DEBUG // is selected by DEBUG_ENABLED define
+#define DEVICE_HAS_DEBUG_SWUART
 #define DEVICE_HAS_BUZZER
-
-#ifdef DEBUG_ENABLED
-#undef DEBUG_ENABLED
-#endif
 
 
 //-- Timers, Timing, EEPROM, and such stuff
@@ -56,15 +52,14 @@
 #define UARTB_USE_RX
 #define UARTB_RXBUFSIZE           RX_SERIAL_RXBUFSIZE // 1024 // 512
 
-#define UARTC_USE_UART1 //3 // debug
-#define UARTC_BAUD                115200
-#define UARTC_USE_TX
-#define UARTC_TXBUFSIZE           512
-#define UARTC_USE_TX_ISR
-//#define UARTC_USE_RX
-//#define UARTC_RXBUFSIZE           512
+#define SWUART_USE_TIM15 // debug
+#define SWUART_TX_IO              IO_PA11
+#define SWUART_BAUD               115200
+#define SWUART_USE_TX
+#define SWUART_TXBUFSIZE          512
+//#define SWUART_TIM_IRQ_PRIORITY   11
 
-#define UART_USE_UART2 // SBus
+#define UART_USE_UART2 // out pin
 #define UART_BAUD                 100000 // SBus normal baud rate, is being set later anyhow
 #define UART_USE_TX
 #define UART_TXBUFSIZE            256 // 512
@@ -99,11 +94,6 @@ void sx_init_gpio(void)
   gpio_init(SX_DIO0, IO_MODE_INPUT_PD, IO_SPEED_VERYFAST);
 }
 
-bool sx_dio0_read(void)
-{
-  return (gpio_read_activehigh(SX_DIO0)) ? true : false;
-}
-
 void sx_amp_transmit(void)
 {
 }
@@ -132,8 +122,14 @@ void sx_dio_enable_exti_isr(void)
   LL_EXTI_EnableIT_0_31(SX_DIO_EXTI_LINE_x);
 }
 
+void sx_dio_exti_isr_clearflag(void)
+{
+  LL_EXTI_ClearFlag_0_31(SX_DIO_EXTI_LINE_x);
+}
 
-//-- SBus output pin
+
+//-- Out port
+// UART_UARTx = USART2
 
 void out_init_gpio(void)
 {
@@ -207,6 +203,8 @@ void led_red_toggle(void) { gpio_toggle(LED_RED); }
 #define POWER_GAIN_DBM            0 // gain of a PA stage if present
 #define POWER_SX1276_MAX_DBM      SX1276_OUTPUT_POWER_MAX // maximum allowed sx power
 #define POWER_USE_DEFAULT_RFPOWER_CALC
+
+#define RFPOWER_DEFAULT           1 // index into rfpower_list array
 
 const rfpower_t rfpower_list[] = {
     { .dbm = POWER_0_DBM, .mW = 1 },

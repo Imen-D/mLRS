@@ -108,11 +108,6 @@ void sx_init_gpio(void)
   gpio_init(SX_BUSY, IO_MODE_INPUT_PU, IO_SPEED_VERYFAST);
 }
 
-bool sx_dio_read(void)
-{
-  return (gpio_read_activehigh(SX_DIO1)) ? true : false;
-}
-
 bool sx_busy_read(void)
 {
   return (gpio_read_activehigh(SX_BUSY)) ? true : false;
@@ -146,6 +141,11 @@ void sx_dio_enable_exti_isr(void)
   LL_EXTI_EnableIT_0_31(SX_DIO_EXTI_LINE_x);
 }
 
+void sx_dio_exti_isr_clearflag(void)
+{
+  LL_EXTI_ClearFlag_0_31(SX_DIO_EXTI_LINE_x);
+}
+
 
 //-- SX12xx II & SPIB
 
@@ -170,11 +170,6 @@ void sx2_init_gpio(void)
   gpio_init(SX2_RESET, IO_MODE_OUTPUT_PP_HIGH, IO_SPEED_VERYFAST);
   gpio_init(SX2_DIO1, IO_MODE_INPUT_PD, IO_SPEED_VERYFAST);
   gpio_init(SX2_BUSY, IO_MODE_INPUT_PU, IO_SPEED_VERYFAST);
-}
-
-bool sx2_dio_read(void)
-{
-  return (gpio_read_activehigh(SX2_DIO1)) ? true : false;
 }
 
 bool sx2_busy_read(void)
@@ -208,6 +203,11 @@ void sx2_dio_enable_exti_isr(void)
 {
   LL_EXTI_ClearFlag_0_31(SX2_DIO_EXTI_LINE_x);
   LL_EXTI_EnableIT_0_31(SX2_DIO_EXTI_LINE_x);
+}
+
+void sx2_dio_exti_isr_clearflag(void)
+{
+  LL_EXTI_ClearFlag_0_31(SX2_DIO_EXTI_LINE_x);
 }
 
 
@@ -331,6 +331,8 @@ uint8_t fiveway_read(void)
 #define POWER_GAIN_DBM            0 // gain of a PA stage if present
 #define POWER_SX1280_MAX_DBM      SX1280_POWER_12p5_DBM // maximum allowed sx power
 #define POWER_USE_DEFAULT_RFPOWER_CALC
+
+#define RFPOWER_DEFAULT           2 // index into rfpower_list array
 
 const rfpower_t rfpower_list[] = {
     { .dbm = POWER_MIN, .mW = INT8_MIN },

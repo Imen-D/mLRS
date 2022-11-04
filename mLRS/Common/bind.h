@@ -67,12 +67,15 @@ class BindBase
     uint8_t task;
     bool is_connected;
 
-    uint64_t TxSignature; // 8 bytes
-    uint64_t RxSignature; // 8 bytes
+    uint64_t TxSignature; // 8 bytes, signature of Tx module
+    uint64_t RxSignature; // 8 bytes, signature of Rx module
 
     void handle_receive(uint8_t antenna, uint8_t rx_status);
     void do_transmit(uint8_t antenna);
     uint8_t do_receive(uint8_t antenna, bool do_clock_reset);
+
+    bool is_pressed = false;
+    int8_t pressed_cnt = 0;
 };
 
 
@@ -85,6 +88,8 @@ void BindBase::Init(void)
     is_connected = false;
 
     button_tlast_ms = millis32();
+    is_pressed = false;
+    pressed_cnt = 0;
 
     memcpy(&TxSignature, BIND_SIGNATURE_TX_STR, 8);
     memcpy(&RxSignature, BIND_SIGNATURE_RX_STR, 8);
@@ -111,11 +116,21 @@ void BindBase::ConfigForBind(void)
 }
 
 
+// called in each doPreTransmit or doPostReceive cycle
 void BindBase::Do(void)
 {
     uint32_t tnow = millis32();
 
-    if (button_pressed()) {
+    // a not so efficient but simple debounce
+    if (!is_pressed) {
+      if (button_pressed()) { pressed_cnt++; } else { pressed_cnt = 0; }
+      if (pressed_cnt >= 4) is_pressed = true;
+    } else {
+      if (!button_pressed()) { pressed_cnt--; } else { pressed_cnt = 4; }
+      if (pressed_cnt <= 0) is_pressed = false;
+    }
+
+    if (is_pressed) {
         if (tnow - button_tlast_ms > BIND_BUTTON_TMO) {
           binding_requested = true;
         }
@@ -143,12 +158,14 @@ void BindBase::Do(void)
 }
 
 
+// called directly after bind.Do()
 uint8_t BindBase::Task(void)
 {
     switch (task) {
     case BIND_TASK_TX_RESTART_CONTROLLER:
-    case BIND_TASK_RX_STORE_PARAMS: // postpone until button released
-        if (button_pressed()) return BIND_TASK_NONE;
+    case BIND_TASK_RX_STORE_PARAMS:
+        // postpone until button is released, prevents jumping to RESTART while button is till pressed by user
+        if (is_pressed) return BIND_TASK_NONE;
         break;
     }
 

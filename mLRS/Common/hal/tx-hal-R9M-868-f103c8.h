@@ -19,6 +19,7 @@
 #define DEVICE_HAS_JRPIN5
 #define DEVICE_HAS_SERIAL_OR_COM // is selected in device specific ways, here: dip switch
 #define DEVICE_HAS_BUZZER
+#define DEVICE_HAS_FAN_ONOFF
 
 
 //-- Timers, Timing, EEPROM, and such stuff
@@ -107,11 +108,6 @@ void sx_init_gpio(void)
   gpio_init(SX_PA_EN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_VERYFAST);
 }
 
-bool sx_dio_read(void)
-{
-  return (gpio_read_activehigh(SX_DIO0)) ? true : false;
-}
-
 void sx_amp_transmit(void)
 {
   gpio_low(SX_SWITCH_RX_EN);
@@ -144,10 +140,14 @@ void sx_dio_enable_exti_isr(void)
   LL_EXTI_EnableIT_0_31(SX_DIO_EXTI_LINE_x);
 }
 
+void sx_dio_exti_isr_clearflag(void)
+{
+  LL_EXTI_ClearFlag_0_31(SX_DIO_EXTI_LINE_x);
+}
 
-//-- SBus input pin
 
-#define IN                        IO_PA2 // UART2 RX, inverted
+//-- In port
+// is on IO_PA2, UART2 RX, inverted
 
 void in_init_gpio(void)
 {
@@ -251,6 +251,26 @@ void pos_switch_init(void)
 #define EEPROM_400K
 
 
+//-- Cooling Fan
+
+#define FAN_IO                    IO_PB9
+
+void fan_init(void)
+{
+  gpio_init(FAN_IO, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_DEFAULT);
+  gpio_low(FAN_IO);
+}
+
+void fan_set_power(int8_t power_dbm)
+{
+  if (power_dbm >= POWER_23_DBM) {
+    gpio_high(FAN_IO);
+  } else {
+    gpio_low(FAN_IO);
+  }
+}
+
+
 //-- POWER
 
 #define DEVICE_HAS_I2C_DAC
@@ -260,7 +280,7 @@ void pos_switch_init(void)
 
 void rfpower_calc(int8_t power_dbm, uint8_t* sx_power, int8_t* actual_power_dbm, tI2cBase* dac)
 {
-  // these values are taken from ELRS
+  // these are the values of ELRS
   // 10mW   10dbm   720
   // 25mW   14dbm   875
   // 50mW   17dBm   1000
@@ -269,18 +289,19 @@ void rfpower_calc(int8_t power_dbm, uint8_t* sx_power, int8_t* actual_power_dbm,
   // 500mW  27dBm   1730
   // 1000mW 30dBm   2100
   // my estimated 1mW 0dBm 200
+  // measurements with an IRC power meter suggests changes (https://www.rcgroups.com/forums/showpost.php?p=49934177&postcount=888)
   uint32_t voltage_mV; // 2500 was too high
   if (power_dbm > 28) {
-    voltage_mV = 2100;
+    voltage_mV = 2250; // was 2100
     *actual_power_dbm = 30;
   } else if (power_dbm > 25) {
     voltage_mV = 1730;
     *actual_power_dbm = 27;
   } else if (power_dbm > 22) {
     voltage_mV = 1390;
-    *actual_power_dbm = 24;
+    *actual_power_dbm = 23;
   } else if (power_dbm > 18) {
-    voltage_mV = 1140;
+    voltage_mV = 1195; // was 1140
     *actual_power_dbm = 20;
   } else if (power_dbm > 15) {
     voltage_mV = 1000;
@@ -292,8 +313,8 @@ void rfpower_calc(int8_t power_dbm, uint8_t* sx_power, int8_t* actual_power_dbm,
     voltage_mV = 720;
     *actual_power_dbm = 10;
   } else {
-    voltage_mV = 200;
-    *actual_power_dbm = 0;
+    voltage_mV = 100; // was 200
+    *actual_power_dbm = 3; // was 0
   }
 
   //if (!dac->initialized) return;
@@ -308,12 +329,15 @@ void rfpower_calc(int8_t power_dbm, uint8_t* sx_power, int8_t* actual_power_dbm,
   *sx_power = 0;
 }
 
+#define RFPOWER_DEFAULT           1 // index into rfpower_list array
+
 const rfpower_t rfpower_list[] = {
-    { .dbm = POWER_0_DBM, .mW = 1 },
+    { .dbm = POWER_3_DBM, .mW = 2 },
     { .dbm = POWER_10_DBM, .mW = 10 },
     { .dbm = POWER_20_DBM, .mW = 100 },
     { .dbm = POWER_23_DBM, .mW = 200 },
     { .dbm = POWER_27_DBM, .mW = 500 },
+    { .dbm = POWER_30_DBM, .mW = 1000 },
 };
 
 

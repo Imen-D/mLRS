@@ -30,12 +30,12 @@ void setup_configure_metadata(void)
     //-- FrequencyBand: "2.4,915 FCC,868"
 #ifdef FREQUENCY_BAND_2P4_GHZ
     SetupMetaData.FrequencyBand_allowed_mask = 0b0001; // only 2.4 GHz, not editable
+#elif defined FREQUENCY_BAND_915_MHZ_FCC && defined FREQUENCY_BAND_868_MHZ
+    SetupMetaData.FrequencyBand_allowed_mask = 0b0110; // only 915 FCC, 868
 #elif defined FREQUENCY_BAND_915_MHZ_FCC
     SetupMetaData.FrequencyBand_allowed_mask = 0b0010; // only 915 MHz FCC, not editable
 #elif defined FREQUENCY_BAND_868_MHZ
     SetupMetaData.FrequencyBand_allowed_mask = 0b0100; // only 868 MHz, not editable
-#elif defined FREQUENCY_BAND_868_915_MHZ
-    SetupMetaData.FrequencyBand_allowed_mask = 0b0110; // only 915 FCC, 868
 #endif
 
     //-- Mode: "50 Hz,31 Hz,19 Hz"
@@ -49,7 +49,7 @@ void setup_configure_metadata(void)
 
     //-- Tx:
 
-    power_optstr_from_rfpower_list(SetupMetaData.Tx_Power_optstr, rfpower_list, RFPOWER_LIST_NUM, 32);
+    power_optstr_from_rfpower_list(SetupMetaData.Tx_Power_optstr, rfpower_list, RFPOWER_LIST_NUM, 44);
 
     // Diversity: "on,antenna1,antenna2"
 #ifdef DEVICE_HAS_DIVERSITY
@@ -100,7 +100,7 @@ void setup_configure_metadata(void)
 
     //-- Rx:
 
-    power_optstr_from_rfpower_list(SetupMetaData.Rx_Power_optstr, rfpower_list, RFPOWER_LIST_NUM, 32);
+    power_optstr_from_rfpower_list(SetupMetaData.Rx_Power_optstr, rfpower_list, RFPOWER_LIST_NUM, 44);
 
     // Rx Diversity: "on,antenna1,antenna2"
 #ifdef DEVICE_HAS_DIVERSITY
@@ -170,6 +170,7 @@ void setup_default(void)
     Setup.Rx.SerialBaudrate = SETUP_RX_SERIAL_BAUDRATE;
     Setup.Rx.SerialLinkMode = SETUP_RX_SERIAL_LINK_MODE;
     Setup.Rx.SendRadioStatus = SETUP_RX_SEND_RADIO_STATUS;
+    Setup.Rx.SendRcChannels = SETUP_RX_SEND_RC_CHANNELS;
     Setup.Rx.Buzzer = SETUP_RX_BUZZER;
 
     for (uint8_t ch = 0; ch < 12; ch++) { Setup.Rx.FailsafeOutChannelValues_Ch1_Ch12[ch] = 0; }
@@ -189,6 +190,8 @@ void setup_sanitize(void)
 
 #ifdef FREQUENCY_BAND_2P4_GHZ
     uint8_t frequency_band_default = SETUP_FREQUENCY_BAND_2P4_GHZ;
+#elif defined FREQUENCY_BAND_915_MHZ_FCC && defined FREQUENCY_BAND_868_MHZ
+    uint8_t frequency_band_default = SETUP_FREQUENCY_BAND_868_MHZ; // my privilege to be in the EU :)
 #elif defined FREQUENCY_BAND_915_MHZ_FCC
     uint8_t frequency_band_default = SETUP_FREQUENCY_BAND_915_MHZ_FCC;
 #elif defined FREQUENCY_BAND_868_MHZ
@@ -262,9 +265,13 @@ void setup_sanitize(void)
     for (uint8_t ch = 0; ch < 4; ch++) {
         if (Setup.Rx.FailsafeOutChannelValues_Ch13_Ch16[ch] > 2) Setup.Rx.FailsafeOutChannelValues_Ch13_Ch16[ch] = 1;
     }
+
     if (Setup.Rx.SerialBaudrate >= SERIAL_BAUDRATE_NUM) Setup.Rx.SerialBaudrate = SERIAL_BAUDRATE_57600;
     if (Setup.Rx.SerialLinkMode >= SERIAL_LINK_MODE_NUM) Setup.Rx.SerialLinkMode = SERIAL_LINK_MODE_TRANSPARENT;
     if (Setup.Rx.SendRadioStatus >= SEND_RADIO_STATUS_NUM) Setup.Rx.SendRadioStatus = SEND_RADIO_STATUS_OFF;
+    if (Setup.Rx.RadioStatusMethod >= RADIO_STATUS_METHOD_NUM) Setup.Rx.RadioStatusMethod = RADIO_STATUS_METHOD_W_TXBUF;
+    //Setup.Rx.RadioStatusMethod = RADIO_STATUS_METHOD_W_TXBUF; // for the moment we fix it to this setting
+    if (Setup.Rx.SendRcChannels >= SEND_RC_CHANNELS_NUM) Setup.Rx.SendRcChannels = SEND_RC_CHANNELS_OFF;
 }
 
 
@@ -411,6 +418,7 @@ void setup_configure(void)
     case SERIAL_BAUDRATE_38400: Config.SerialBaudrate = 38400; break;
     case SERIAL_BAUDRATE_57600: Config.SerialBaudrate = 57600; break;
     case SERIAL_BAUDRATE_115200: Config.SerialBaudrate = 115200; break;
+    case SERIAL_BAUDRATE_230400: Config.SerialBaudrate = 230400; break;
     default:
         Config.SerialBaudrate = 57600;
     }
@@ -420,10 +428,10 @@ void setup_configure(void)
     Config.UseMbridge = false;
     Config.UseCrsf = false;
 #if (defined DEVICE_IS_TRANSMITTER) && (defined DEVICE_HAS_JRPIN5)
-    if (Setup.Tx.SerialDestination == SERIAL_DESTINATION_MBRDIGE || Setup.Tx.ChannelsSource == CHANNEL_SOURCE_MBRIDGE) {
+    if ((Setup.Tx.SerialDestination == SERIAL_DESTINATION_MBRDIGE) || (Setup.Tx.ChannelsSource == CHANNEL_SOURCE_MBRIDGE)) {
         Config.UseMbridge = true;
     }
-    if (Setup.Tx.SerialDestination != SERIAL_DESTINATION_MBRDIGE && Setup.Tx.ChannelsSource == CHANNEL_SOURCE_CRSF) {
+    if ((Setup.Tx.SerialDestination != SERIAL_DESTINATION_MBRDIGE) && (Setup.Tx.ChannelsSource == CHANNEL_SOURCE_CRSF)) {
         Config.UseCrsf = true;
     }
     if (Config.UseMbridge && Config.UseCrsf) {

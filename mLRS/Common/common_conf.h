@@ -11,8 +11,8 @@
 #pragma once
 
 
-#define VERSION             202 // leading zero makes it octal!
-#define VERSIONONLYSTR      "v0.2.02"
+#define VERSION             305 // leading zero makes it octal!
+#define VERSIONONLYSTR      "v0.3.05"
 #define SETUPLAYOUT         2   // this should be changed then Setup struct and/or serial changes
 
 
@@ -54,7 +54,7 @@
 
 #define SETUP_TX_SERIAL_LINK_MODE       1 // 0: transparent, 1: mavlink
 
-#define SETUP_TX_SEND_RADIO_STATUS      1 // 0: off, 1: RADIO_STATUS
+#define SETUP_TX_SEND_RADIO_STATUS      1 // 0: off, 1: 1 Hz, 2: 2 Hz, 3: 3 Hz, 4: 4 Hz
 
 #define SETUP_TX_BUZZER                 0 // 0: off, 1: LP, 2: rxLQ
 #define SETUP_TX_CLI_LINE_END           0 // 0: CR, 1: LF, 2: CRLF
@@ -66,7 +66,7 @@
 
 #define SETUP_RX_FAILSAFE_MODE          1 // 0: no signal 1: low throttle, 4: CH1-CH4 center signal
 
-#define SETUP_RX_SERIAL_BAUDRATE        3 // 0: 9600, 1: 19200, 2: 38400, 3: 57600, 4: 115200
+#define SETUP_RX_SERIAL_BAUDRATE        3 // 0: 9600, 1: 19200, 2: 38400, 3: 57600, 4: 115200, 5: 230400
 
 #define SETUP_RX_POWER                  CPOWER
 
@@ -74,7 +74,8 @@
 
 #define SETUP_RX_SERIAL_LINK_MODE       1 // 0: transparent, 1: mavlink
 
-#define SETUP_RX_SEND_RADIO_STATUS      2 // 0: off, 1: RADIO_STATUS, 2: RADIO_STATUS w txbuf flow control
+#define SETUP_RX_SEND_RADIO_STATUS      1 // 0: off, 1: 1 Hz, 2: 2 Hz, 3: 3 Hz, 4: 4 Hz
+#define SETUP_RX_SEND_RC_CHANNELS       0 // 0: off, 1: RC_CHANNEL_OVERRIDE, 2: RC_CHANNELS
 
 #define SETUP_RX_OUT_RSSI_CHANNEL       12 // 0: off, 5: CH5, 12: CH12, note: CH13 - CH16 are 3-way and not suitable
 
@@ -126,7 +127,7 @@
 
 #define RX_SERIAL_BAUDRATE              19200 // will be overwritten by setup
 #define RX_SERIAL_TXBUFSIZE             1024
-#define RX_SERIAL_RXBUFSIZE             1024
+#define RX_SERIAL_RXBUFSIZE             2048 // ArduPilot also can be rude
 
 #define TX_COM_BAUDRATE                 115200
 #define TX_COM_TXBUFSIZE                1024 // cli needs it

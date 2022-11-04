@@ -160,7 +160,7 @@ uint8_t sep, n;
        for (uint8_t i = 0; i < sep; i++) name[n++] = toupper(s[i]);
        name[n] = '\0';
        n = 0;
-       for (uint8_t i = sep + 1; i < strlen(s); i++) svalue[n++] = toupper(s[i]);
+       for (uint8_t i = sep + 1; i < strlen(s); i++) svalue[n++] = s[i]; // we must not modify it, e.g. bind phrase
        svalue[n] = '\0';
    }
 
@@ -177,7 +177,7 @@ uint8_t nr, n;
     const char* optstr = SetupParameter[param_idx].optstr;
 
     if (format == PARAM_FORMAT_CLI) { // we do some cli specific faking
-         if(param_idx == 2) { // RF Mode
+         if (param_idx == 2) { // RF Mode
              optstr = SETUP_OPT_RF_BAND_LONGSTR;
          }
     }
@@ -250,6 +250,18 @@ uint16_t param_get_allowed_mask(uint8_t param_idx)
 }
 
 
+uint8_t param_get_allowed_opt_num(uint8_t param_idx)
+{
+    uint16_t allowed_mask = param_get_allowed_mask(param_idx);
+
+    uint8_t nr = 0;
+    for (uint8_t i = 0; i < param_get_opt_num(param_idx); i++) {
+        if (allowed_mask & (1 << i)) nr++;
+    }
+    return nr;
+}
+
+
 bool param_get_idx(uint8_t* param_idx, char* name)
 {
 char s[64];
@@ -308,10 +320,7 @@ bool param_set_val(bool* rx_param_changed, char* svalue, uint8_t idx)
     case SETUP_PARAM_TYPE_STR6:
         if (strlen(svalue) != 6) return false;
         for (uint8_t i = 0; i < 6; i++) {
-            if (!((svalue[i] >= 'a' && svalue[i] <= 'z') ||
-                  (svalue[i] >= '0' && svalue[i] <= '9' ) ||
-                  (svalue[i] == '_') || (svalue[i] == '#') ||
-                  (svalue[i] == '-') || (svalue[i] == '.')   )) return false;
+            if (!is_valid_bindphrase_char(svalue[i])) return false;
         }
         // set
         *rx_param_changed = setup_set_param_str6(idx, svalue);
@@ -354,7 +363,7 @@ char s[16];
         }
         }break;
     case SETUP_PARAM_TYPE_STR6:
-        putsn("  [a-zA-Z0-9#-._]");
+        putsn("  [a-z0-9#-._]");
         break;
     }
 }
@@ -362,9 +371,16 @@ char s[16];
 
 void tTxCli::print_param(uint8_t idx)
 {
+    uint8_t allowed_nr = param_get_allowed_opt_num(idx);
+
     puts("  ");
     puts(SetupParameter[idx].name);
     puts(" = ");
+    if (allowed_nr == 0) {
+      puts("-"); // this parameter is not available on this device
+      puts(ret);
+      return;
+    }
     char s[32];
     param_get_setting_str(s, idx, PARAM_FORMAT_CLI);
     puts(s);
@@ -380,6 +396,7 @@ void tTxCli::print_param(uint8_t idx)
     case SETUP_PARAM_TYPE_LIST:{
         uint8_t u8 = *(uint8_t*)(SetupParameter[idx].ptr);
         puts(" ["); com->putc(u8 + '0'); puts("]");
+        if (allowed_nr == 1) puts("(unchangeable)"); // unmodifiable unalterable immutable unchangeable
         }break;
     case SETUP_PARAM_TYPE_STR6:
         break;
@@ -495,7 +512,7 @@ bool rx_param_changed;
       if (cmd_param_set(sname, svalue)) { // p name, p name = value
           if (!param_get_idx(&param_idx, sname)) {
               putsn("err: invalid parameter name");
-          } else if (!connected() && sname[0] == 'R'){
+          } else if (!connected() && setup_param_is_rx(param_idx)) {
               putsn("warn: receiver not connected");
           } else if (svalue[0] == '?') {
               print_param(param_idx);

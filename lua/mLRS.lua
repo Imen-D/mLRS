@@ -8,7 +8,182 @@
 -- Lua TOOLS script
 ----------------------------------------------------------------------
 -- copy script to SCRIPTS\TOOLS folder on OpenTx SD card
--- works with mLRS v0.01.13, mOTX v33
+-- works with mLRS v0.01.13 and later, mOTX v33
+
+local version = '2022-10-05.00'
+
+
+----------------------------------------------------------------------
+-- it would be so nice to have
+----------------------------------------------------------------------
+
+local function drawFilledTriangle(x0, y0, x1, y1, x2, y2, flags)
+    if lcd.drawFilledTriangle == nil then return end
+    lcd.drawFilledTriangle(x0, y0, x1, y1, x2, y2, flags)
+end    
+
+local charSize = {}
+charSize["a"] = 10
+charSize["b"] = 10
+charSize["c"] = 9
+charSize["d"] = 10
+charSize["e"] = 9
+charSize["f"] = 7
+charSize["g"] = 10
+charSize["h"] = 10
+charSize["i"] = 5
+charSize["j"] = 6
+charSize["k"] = 10
+charSize["l"] = 5
+charSize["m"] = 15
+charSize["n"] = 10
+charSize["o"] = 10
+charSize["p"] = 10
+charSize["q"] = 10
+charSize["r"] = 7
+charSize["s"] = 9
+charSize["t"] = 6
+charSize["u"] = 10
+charSize["v"] = 9
+charSize["w"] = 13
+charSize["x"] = 9
+charSize["y"] = 9
+charSize["z"] = 9
+charSize["0"] = 10
+charSize["1"] = 10
+charSize["2"] = 10
+charSize["3"] = 10
+charSize["4"] = 10
+charSize["5"] = 10
+charSize["6"] = 10
+charSize["7"] = 10
+charSize["8"] = 10
+charSize["9"] = 10
+charSize["_"] = 9
+charSize["#"] = 11
+charSize["-"] = 6
+charSize["."] = 5
+
+local function getCharWidth(c)
+    if charSize[c] == nil then return 10 end
+    return charSize[c]
+end    
+
+
+----------------------------------------------------------------------
+-- MBridge CRSF emulation
+----------------------------------------------------------------------
+
+local isConnected = nil
+local cmdPush = nil
+local cmdPop = nil
+
+local MBRIDGE_COMMANDPACKET_STX  = 0xA0
+local MBRIDGE_COMMANDPACKET_MASK = 0xE0
+
+local MBRIDGE_CMD_TX_LINK_STATS_LEN  = 22
+local MBRIDGE_CMD_DEVICE_ITEM_LEN    = 24
+local MBRIDGE_CMD_PARAM_ITEM_LEN     = 24
+local MBRIDGE_CMD_REQUEST_CMD_LEN    = 18
+local MBRIDGE_CMD_INFO_LEN           = 24
+local MBRIDGE_CMD_PARAM_SET_LEN      = 7
+local MBRIDGE_CMD_MODELID_SET_LEN    = 3
+
+local MBRIDGE_PARAM_TYPE_UINT8       = 0
+local MBRIDGE_PARAM_TYPE_INT8        = 1
+local MBRIDGE_PARAM_TYPE_UINT16      = 2
+local MBRIDGE_PARAM_TYPE_INT16       = 3
+local MBRIDGE_PARAM_TYPE_LIST        = 4
+local MBRIDGE_PARAM_TYPE_STR6        = 5
+
+local MBRIDGE_CMD_TX_LINK_STATS      = 2
+local MBRIDGE_CMD_REQUEST_INFO       = 3
+local MBRIDGE_CMD_DEVICE_ITEM_TX     = 4
+local MBRIDGE_CMD_DEVICE_ITEM_RX     = 5
+local MBRIDGE_CMD_PARAM_REQUEST_LIST = 6
+local MBRIDGE_CMD_PARAM_ITEM         = 7
+local MBRIDGE_CMD_PARAM_ITEM2        = 8
+local MBRIDGE_CMD_PARAM_ITEM3        = 9
+local MBRIDGE_CMD_REQUEST_CMD        = 10
+local MBRIDGE_CMD_INFO               = 11
+local MBRIDGE_CMD_PARAM_SET          = 12
+local MBRIDGE_CMD_PARAM_STORE        = 13
+local MBRIDGE_CMD_BIND_START         = 14
+local MBRIDGE_CMD_BIND_STOP          = 15
+local MBRIDGE_CMD_MODELID_SET        = 16
+
+local function mbridgeCmdLen(cmd)
+    if cmd == MBRIDGE_CMD_TX_LINK_STATS then return MBRIDGE_CMD_TX_LINK_STATS_LEN; end
+    if cmd == MBRIDGE_CMD_REQUEST_INFO then return 0; end
+    if cmd == MBRIDGE_CMD_DEVICE_ITEM_TX then return MBRIDGE_CMD_DEVICE_ITEM_LEN; end
+    if cmd == MBRIDGE_CMD_DEVICE_ITEM_RX then return MBRIDGE_CMD_DEVICE_ITEM_LEN; end
+    if cmd == MBRIDGE_CMD_PARAM_REQUEST_LIST then return 0; end
+    if cmd == MBRIDGE_CMD_PARAM_ITEM then return MBRIDGE_CMD_PARAM_ITEM_LEN; end
+    if cmd == MBRIDGE_CMD_PARAM_ITEM2 then return MBRIDGE_CMD_PARAM_ITEM_LEN; end
+    if cmd == MBRIDGE_CMD_PARAM_ITEM3 then return MBRIDGE_CMD_PARAM_ITEM_LEN; end
+    if cmd == MBRIDGE_CMD_REQUEST_CMD then return MBRIDGE_CMD_REQUEST_CMD_LEN; end
+    if cmd == MBRIDGE_CMD_INFO then return MBRIDGE_CMD_INFO_LEN; end
+    if cmd == MBRIDGE_CMD_PARAM_SET then return MBRIDGE_CMD_PARAM_SET_LEN; end
+    if cmd == MBRIDGE_CMD_PARAM_STORE then return 0; end
+    if cmd == MBRIDGE_CMD_BIND_START then return 0; end
+    if cmd == MBRIDGE_CMD_BIND_STOP then return 0; end
+    if cmd == MBRIDGE_CMD_MODELID_SET then return MBRIDGE_CMD_MODELID_SET_LEN; end
+    return 0;
+end
+  
+local function crsfIsConnected()
+    if getRSSI() ~= 0 then return true end
+    return false
+end
+  
+local function crsfCmdPush(cmd, payload)
+    -- 'O', 'W', len/cmd, payload bytes
+    local data = { 79, 87, cmd + MBRIDGE_COMMANDPACKET_STX }
+    for i=1, mbridgeCmdLen(cmd) do data[#data + 1] = 0 end -- fill with zeros of correct length
+    for i=1, #payload do data[3 + i] = payload[i] end -- fill in data
+    -- crossfireTelemetryPush() extends it to
+    -- 0xEE, len, 129, 'O', 'W', len/cmd, payload bytes, crc8
+    return crossfireTelemetryPush(129, data)
+end
+
+local function crsfCmdPop()
+    -- crossfireTelemetryPop() is invoked if
+    -- address = RADIO_ADDRESS (0xEA) or UART_SYNC (0xC8)
+    -- frame id != normal crsf telemetry sensor id
+    -- 0xEE, len, 130, len/cmd, payload bytes, crc8
+    local cmd, data = crossfireTelemetryPop()
+    -- cmd = 130
+    -- data = len/cmd, payload bytes
+    if cmd == nil then return nil end
+    local command = data[1] - MBRIDGE_COMMANDPACKET_STX
+    local res = {
+        cmd = command,
+        len = mbridgeCmdLen(command),
+        payload = {}
+    }
+    for i=2, #data do res.payload[i-2] = data[i] end
+    return res
+end  
+
+
+local function mbridgeIsConnected()
+    local LStats = mbridge.getLinkStats()
+    if LStats.LQ > 0 then return true end
+    return false
+end
+
+
+local function setupBridge()
+    if mbridge == nil or not mbridge.enabled() then
+        isConnected = crsfIsConnected
+        cmdPush = crsfCmdPush
+        cmdPop = crsfCmdPop
+    else  
+        isConnected = mbridgeIsConnected
+        cmdPush = mbridge.cmdPush
+        cmdPop = mbridge.cmdPop
+    end
+end  
 
 
 ----------------------------------------------------------------------
@@ -86,10 +261,7 @@ local has_connected = false
 local has_disconnected = false
 
 local function doConnected()
-    local LStats = mbridge.getLinkStats()
-    
-    local is_connected = false
-    if LStats.LQ > 0 then is_connected = true end
+    local is_connected = isConnected()
     
     connected_has_changed = false
     if is_connected ~= connected then connected_has_changed = true end
@@ -167,22 +339,22 @@ local function mb_to_u32(payload, pos)
 end    
 
 local function mb_to_value(payload, pos, typ)
-    if typ == mbridge.PARAM_TYPE_UINT8 then -- UINT8
+    if typ == MBRIDGE_PARAM_TYPE_UINT8 then -- UINT8
         return mb_to_u8(payload,pos)
-    elseif typ == mbridge.PARAM_TYPE_INT8 then -- INT8
+    elseif typ == MBRIDGE_PARAM_TYPE_INT8 then -- INT8
         return mb_to_i8(payload,pos)
-    elseif typ == mbridge.PARAM_TYPE_UINT16 then -- UINT16
+    elseif typ == MBRIDGE_PARAM_TYPE_UINT16 then -- UINT16
         return mb_to_u16(payload,pos)
-    elseif typ == mbridge.PARAM_TYPE_INT16 then -- INT16
+    elseif typ == MBRIDGE_PARAM_TYPE_INT16 then -- INT16
         return mb_to_i16(payload,pos)
-    elseif typ == mbridge.PARAM_TYPE_LIST then -- LIST
+    elseif typ == MBRIDGE_PARAM_TYPE_LIST then -- LIST
         return payload[pos+0]
     end
     return 0
 end    
 
 local function mb_to_value_or_str6(payload, pos, typ)
-    if typ == 5 then --mbridge.PARAM_TYPE_STR6 then
+    if typ == 5 then --MBRIDGE_PARAM_TYPE_STR6 then
         return mb_to_string(payload,pos,6)
     else
         return mb_to_value(payload,pos,typ)
@@ -252,36 +424,36 @@ local function doParamLoop()
     if t_10ms - t_last > 10 then
       t_last = t_10ms
       if DEVICE_ITEM_TX == nil then
-          mbridge.cmdPush(mbridge.CMD_REQUEST_INFO, {})
-          --mbridge.cmdPush(mbridge.CMD_REQUEST_CMD, {mbridge.CMD_REQUEST_INFO)
+          cmdPush(MBRIDGE_CMD_REQUEST_INFO, {})
+          --cmdPush(MBRIDGE_CMD_REQUEST_CMD, {MBRIDGE_CMD_REQUEST_INFO)
       elseif DEVICE_PARAM_LIST == nil then
           if DEVICE_INFO ~= nil then -- wait for it to be populated
               DEVICE_PARAM_LIST = {}
-              mbridge.cmdPush(mbridge.CMD_PARAM_REQUEST_LIST, {})
-              --mbridge.cmdPush(mbridge.CMD_REQUEST_CMD, {mbridge.CMD_PARAM_REQUEST_LIST})
+              cmdPush(MBRIDGE_CMD_PARAM_REQUEST_LIST, {})
+              --cmdPush(MBRIDGE_CMD_REQUEST_CMD, {MBRIDGE_CMD_PARAM_REQUEST_LIST})
           end    
       end  
     end    
   
     -- handle received commands
     for ijk = 1,6 do -- handle only 6 at most per lua cycle
-        local cmd = mbridge.cmdPop()
+        local cmd = cmdPop()
         if cmd == nil then break end
-        if cmd.cmd == mbridge.CMD_DEVICE_ITEM_TX then 
+        if cmd.cmd == MBRIDGE_CMD_DEVICE_ITEM_TX then 
             -- MBRIDGE_CMD_DEVICE_ITEM_TX
             DEVICE_ITEM_TX = cmd
             DEVICE_ITEM_TX.version_u16 = mb_to_u16(cmd.payload, 0)
             DEVICE_ITEM_TX.setuplayout = mb_to_u16(cmd.payload, 2)
             DEVICE_ITEM_TX.name = mb_to_string(cmd.payload, 4, 20)
             DEVICE_ITEM_TX.version_str = mb_to_firmware_u16_string(DEVICE_ITEM_TX.version_u16)
-        elseif cmd.cmd == mbridge.CMD_DEVICE_ITEM_RX then 
+        elseif cmd.cmd == MBRIDGE_CMD_DEVICE_ITEM_RX then 
             -- MBRIDGE_CMD_DEVICE_ITEM_RX
             DEVICE_ITEM_RX = cmd
             DEVICE_ITEM_RX.version_u16 = mb_to_u16(cmd.payload, 0)
             DEVICE_ITEM_RX.setuplayout = mb_to_u16(cmd.payload, 2)
             DEVICE_ITEM_RX.name = mb_to_string(cmd.payload, 4, 20)
             DEVICE_ITEM_RX.version_str = mb_to_firmware_u16_string(DEVICE_ITEM_RX.version_u16)
-        elseif cmd.cmd == mbridge.CMD_INFO then 
+        elseif cmd.cmd == MBRIDGE_CMD_INFO then 
             -- MBRIDGE_CMD_INFO
             DEVICE_INFO = cmd
             DEVICE_INFO.receiver_sensitivity = mb_to_i16(cmd.payload,0)
@@ -290,7 +462,7 @@ local function doParamLoop()
             DEVICE_INFO.rx_available = mb_to_u8_bits(cmd.payload,5,0,0x1)
             DEVICE_INFO.tx_diversity = mb_to_u8_bits(cmd.payload,5,1,0x3)
             DEVICE_INFO.rx_diversity = mb_to_u8_bits(cmd.payload,5,3,0x3)
-        elseif cmd.cmd == mbridge.CMD_PARAM_ITEM then 
+        elseif cmd.cmd == MBRIDGE_CMD_PARAM_ITEM then 
             -- MBRIDGE_CMD_PARAM_ITEM
             local index = cmd.payload[0]
             if index < 128 then
@@ -307,15 +479,15 @@ local function doParamLoop()
             elseif index == 255 then
                 DEVICE_PARAM_LIST_complete = true
             end  
-        elseif cmd.cmd == mbridge.CMD_PARAM_ITEM2 then 
+        elseif cmd.cmd == MBRIDGE_CMD_PARAM_ITEM2 then 
             -- MBRIDGE_CMD_PARAM_ITEM2
             local index = cmd.payload[0]
             if DEVICE_PARAM_LIST[index] ~= nil then
-                if DEVICE_PARAM_LIST[index].typ < mbridge.PARAM_TYPE_LIST then
+                if DEVICE_PARAM_LIST[index].typ < MBRIDGE_PARAM_TYPE_LIST then
                     DEVICE_PARAM_LIST[index].min = mb_to_value(cmd.payload, 1, DEVICE_PARAM_LIST[index].typ)
                     DEVICE_PARAM_LIST[index].max = mb_to_value(cmd.payload, 3, DEVICE_PARAM_LIST[index].typ)
                     DEVICE_PARAM_LIST[index].unit = mb_to_string(cmd.payload, 7, 6)
-                elseif DEVICE_PARAM_LIST[index].typ == mbridge.PARAM_TYPE_LIST then
+                elseif DEVICE_PARAM_LIST[index].typ == MBRIDGE_PARAM_TYPE_LIST then
                     DEVICE_PARAM_LIST[index].allowed_mask = mb_to_u16(cmd.payload, 1)
                     DEVICE_PARAM_LIST[index].options = mb_to_options(cmd.payload, 3, 21)
                     DEVICE_PARAM_LIST[index].item2payload = cmd.payload
@@ -324,11 +496,11 @@ local function doParamLoop()
                     DEVICE_PARAM_LIST[index].editable = mb_allowed_mask_editable(DEVICE_PARAM_LIST[index].allowed_mask)
                 end  
             end -- anything else should not happen, but ???
-        elseif cmd.cmd == mbridge.CMD_PARAM_ITEM3 then 
+        elseif cmd.cmd == MBRIDGE_CMD_PARAM_ITEM3 then 
             -- MBRIDGE_CMD_PARAM_ITEM3
             local index = cmd.payload[0]
             if DEVICE_PARAM_LIST[index] ~= nil then
-                if DEVICE_PARAM_LIST[index].typ == mbridge.PARAM_TYPE_LIST then
+                if DEVICE_PARAM_LIST[index].typ == MBRIDGE_PARAM_TYPE_LIST then
                     local s = DEVICE_PARAM_LIST[index].item2payload
                     for i=1,23 do s[23+i] = cmd.payload[i] end  
                     DEVICE_PARAM_LIST[index].options = mb_to_options(s, 3, 21+23)
@@ -343,30 +515,30 @@ end
 local function sendParamSet(idx)
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
     local p = DEVICE_PARAM_LIST[idx]
-    if p.typ < mbridge.PARAM_TYPE_LIST then
-        mbridge.cmdPush(mbridge.CMD_PARAM_SET, {idx, p.value})
-    elseif p.typ == mbridge.PARAM_TYPE_LIST then
-        mbridge.cmdPush(mbridge.CMD_PARAM_SET, {idx, p.value})
-    elseif p.typ == mbridge.PARAM_TYPE_STR6 then
+    if p.typ < MBRIDGE_PARAM_TYPE_LIST then
+        cmdPush(MBRIDGE_CMD_PARAM_SET, {idx, p.value})
+    elseif p.typ == MBRIDGE_PARAM_TYPE_LIST then
+        cmdPush(MBRIDGE_CMD_PARAM_SET, {idx, p.value})
+    elseif p.typ == MBRIDGE_PARAM_TYPE_STR6 then
         local cmd = {idx}
         for i = 1,6 do
             cmd[i+1] = string.byte(string.sub(p.value, i,i))
         end    
-        mbridge.cmdPush(mbridge.CMD_PARAM_SET, cmd)
+        cmdPush(MBRIDGE_CMD_PARAM_SET, cmd)
     end  
 end  
     
     
 local function sendParamStore()
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
-    mbridge.cmdPush(mbridge.CMD_PARAM_STORE, {})
+    cmdPush(MBRIDGE_CMD_PARAM_STORE, {})
     setPopupWTmo("Save Parameters",250)
 end  
 
 
 local function sendBind()
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
-    mbridge.cmdPush(mbridge.CMD_BIND, {})
+    cmdPush(MBRIDGE_CMD_BIND_START, {})
     setPopupBlocked("Binding")
 end  
 
@@ -433,9 +605,9 @@ end
 local function param_value_inc(idx)
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
     local p = DEVICE_PARAM_LIST[idx]
-    if p.typ < mbridge.PARAM_TYPE_LIST then
+    if p.typ < MBRIDGE_PARAM_TYPE_LIST then
         p.value = p.value + 1
-    elseif p.typ == mbridge.PARAM_TYPE_LIST then 
+    elseif p.typ == MBRIDGE_PARAM_TYPE_LIST then 
         local value = p.value
         while value <= p.max do 
             value = value + 1
@@ -451,9 +623,9 @@ end
 local function param_value_dec(idx)
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
     local p = DEVICE_PARAM_LIST[idx]
-    if p.typ < mbridge.PARAM_TYPE_LIST then
+    if p.typ < MBRIDGE_PARAM_TYPE_LIST then
         p.value = p.value - 1
-    elseif p.typ == mbridge.PARAM_TYPE_LIST then 
+    elseif p.typ == MBRIDGE_PARAM_TYPE_LIST then 
         local value = p.value
         while value >= p.min do 
             value = value - 1
@@ -469,7 +641,7 @@ end
 local function param_str6_inc(idx)
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
     local p = DEVICE_PARAM_LIST[idx]
-    if p.typ == mbridge.PARAM_TYPE_STR6 then 
+    if p.typ == MBRIDGE_PARAM_TYPE_STR6 then 
         local c = string.sub(p.value, cursor_x_idx+1, cursor_x_idx+1)
         local i = string.find(bindphrase_chars, c, 1, true) -- true for plain search
         i = i + 1 
@@ -484,7 +656,7 @@ end
 local function param_str6_dec(idx)
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
     local p = DEVICE_PARAM_LIST[idx]
-    if p.typ == mbridge.PARAM_TYPE_STR6 then 
+    if p.typ == MBRIDGE_PARAM_TYPE_STR6 then 
         local c = string.sub(p.value, cursor_x_idx+1, cursor_x_idx+1)
         local i = string.find(bindphrase_chars, c, 1, true) -- true for plain search
         i = i - 1 
@@ -499,7 +671,7 @@ end
 local function param_str6_next(idx)
     if not DEVICE_PARAM_LIST_complete then return end -- needed??
     local p = DEVICE_PARAM_LIST[idx]
-    if p.typ == mbridge.PARAM_TYPE_STR6 then 
+    if p.typ == MBRIDGE_PARAM_TYPE_STR6 then 
         cursor_x_idx = cursor_x_idx + 1
         if cursor_x_idx >= string.len(p.value) then
             return true -- last char
@@ -555,9 +727,9 @@ local function drawPageEdit(page_str)
             if shifted_idx >= page_N1 then y = y - page_N1*dy; xofs = 230 end
             
             lcd.drawText(10+xofs, y, name, TEXT_COLOR)
-            if p.typ < mbridge.PARAM_TYPE_LIST then
+            if p.typ < MBRIDGE_PARAM_TYPE_LIST then
                 lcd.drawText(140+xofs, y, p.value.." "..p.unit, cur_attr_p(idx, pidx))  
-            elseif p.typ == mbridge.PARAM_TYPE_LIST then
+            elseif p.typ == MBRIDGE_PARAM_TYPE_LIST then
                 lcd.drawText(140+xofs, y, p.options[p.value+1], cur_attr_p(idx, pidx))  
             end
         end
@@ -573,11 +745,13 @@ local function drawPageEdit(page_str)
     local x_mid = LCD_W/2 - 5 
     if top_idx > 0 then
         local y_base = y0 - 4
-        lcd.drawFilledTriangle(x_mid-6, y_base, x_mid+6, y_base, x_mid, y_base-6, TEXT_COLOR)
+        --lcd.drawFilledTriangle(x_mid-6, y_base, x_mid+6, y_base, x_mid, y_base-6, TEXT_COLOR)
+        drawFilledTriangle(x_mid-6, y_base, x_mid+6, y_base, x_mid, y_base-6, TEXT_COLOR)
     end
     if page_param_cnt > top_idx + page_N then
         local y_base = y0 + page_N1*dy + 4
-        lcd.drawFilledTriangle(x_mid-6, y_base, x_mid+6, y_base, x_mid, y_base+6, TEXT_COLOR)
+        --lcd.drawFilledTriangle(x_mid-6, y_base, x_mid+6, y_base, x_mid, y_base+6, TEXT_COLOR)
+        drawFilledTriangle(x_mid-6, y_base, x_mid+6, y_base, x_mid, y_base+6, TEXT_COLOR)
     end      
 end    
 
@@ -660,7 +834,8 @@ local function drawPageMain()
             local c = string.sub(DEVICE_PARAM_LIST[0].value, i, i)
             local attr = cur_attr_x(0, i-1)
             lcd.drawText(x, y, c, attr)
-            x = x + lcd.getTextWidth(c,1,attr)+1
+            --x = x + lcd.getTextWidth(c,1,attr)+1
+            x = x + getCharWidth(c) + 1
         end
     end    
     
@@ -739,6 +914,7 @@ end
 local function doPageMain(event)
     lcd.drawFilledRectangle(0, 0, LCD_W, 30, TITLE_BGCOLOR)
     lcd.drawText(5, 5, "mLRS Configurator: Main Page", MENU_TITLE_COLOR)
+    lcd.drawText(LCD_W-1, 0, version, MENU_TITLE_COLOR+TINSIZE+RIGHT)
   
     if not edit then
         if event == EVT_VIRTUAL_EXIT then
@@ -864,9 +1040,14 @@ local function scriptRun(event)
         return 2
     end  
     if mbridge == nil or not mbridge.enabled() then
-        error("mLRS not accessible: mBridge is not enabled!")
-        return 2
+        if model.getModule(1).Type ~= 5 then
+            error("mLRS not accessible: mBridge or CRSF not enabled!")
+            return 2
+        end
     end
+    
+    setupBridge()
+    
     if not edit and page_nr == 0 then
         if event == EVT_VIRTUAL_EXIT then
             return 2

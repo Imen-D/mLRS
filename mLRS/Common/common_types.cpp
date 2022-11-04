@@ -11,8 +11,10 @@
 #include "../modules/stm32ll-lib/src/stdstm32.h"
 #include "common_types.h"
 #include "setup_types.h"
-#include "crsf_protocol.h"
+#include "protocols/crsf_protocol.h"
 
+
+//-- rssi & snr
 
 uint8_t rssi_u7_from_i8(int8_t rssi_i8)
 {
@@ -51,6 +53,9 @@ int8_t rssi_i8_from_u7(uint8_t rssi_u7)
 //
 // https://github.com/ArduPilot/ardupilot/blob/master/libraries/AP_RCProtocol/AP_RCProtocol_CRSF.cpp#L483-L510
 //   -120 ... -50 -> 0 .. 254
+//
+// ArduPilot wants to have it in range 0..254, which it scales to 0.0..1.0, 255 gets 0.0
+// TODO: we should take into account in the scaling a LNA as well as the db min for a board & setting
 uint8_t rssi_i8_to_ap(int8_t rssi_i8)
 {
     if (rssi_i8 == RSSI_INVALID) return UINT8_MAX;
@@ -77,6 +82,55 @@ uint16_t rssi_i8_to_ap_sbus(int8_t rssi_i8)
     return (r * 1705 + m/2) / m + 172;
 }
 
+
+//-- rc data
+
+uint16_t clip_rc(int32_t x)
+{
+    if (x <= 1) return 1;
+    if (x >= 2047) return 2047;
+    return x;
+}
+
+
+uint16_t rc_from_sbus(uint16_t sbus_ch)
+{
+    return clip_rc( (((int32_t)(sbus_ch) - 992) * 2047) / 1966 + 1024 );
+}
+
+
+uint16_t rc_from_crsf(uint16_t crsf_ch)
+{
+    return clip_rc( (((int32_t)(crsf_ch) - 992) * 2047) / 1966 + 1024 );
+}
+
+
+uint16_t rc_to_sbus(uint16_t rc_ch)
+{
+    return (((int32_t)(rc_ch) - 1024) * 1920) / 2047 + 1000;
+}
+
+
+uint16_t rc_to_crsf(uint16_t rc_ch)
+{
+    return (((int32_t)(rc_ch) - 1024) * 1920) / 2047 + 1000;
+}
+
+
+uint16_t rc_to_mavlink(uint16_t rc_ch)
+{
+    return (((int32_t)(rc_ch) - 1024) * 1200) / 2047 + 1500; // 1200 = 1920 * 5/8
+}
+
+
+int16_t rc_to_mavlink_13bcentered(uint16_t rc_ch)
+{
+//    return ((int32_t)(rc_ch) - 1024) * 4;
+    return (((int32_t)(rc_ch) - 1024) * 15) / 4; // let's mimic rc_to_mavlink()
+}
+
+
+//-- crsf
 
 uint8_t crsf_cvt_power(int8_t power_dbm)
 {
@@ -120,24 +174,18 @@ uint8_t crsf_cvt_rssi(int8_t rssi_i8)
 
 //-- bind phrase & version
 
+bool is_valid_bindphrase_char(char c)
+{
+    return ((c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9' ) ||
+            (c == '_') || (c == '#') || (c == '-') || (c == '.'));
+}
+
+
 void sanitize_bindphrase(char* bindphrase)
 {
     for (uint8_t i = 0; i < 6; i++) {
-
-        if (bindphrase[i] >= 'a' && bindphrase[i] <= 'z' ) {
-        } else
-        if (bindphrase[i] >= '0' && bindphrase[i] <= '9' ) {
-        } else
-        if (bindphrase[i] == '_') {
-        } else
-        if (bindphrase[i] == '#') {
-        } else
-        if (bindphrase[i] == '-') {
-        } else
-        if (bindphrase[i] == '.') {
-        } else {
-          bindphrase[i] = '_';
-        }
+        if (!is_valid_bindphrase_char(bindphrase[i])) bindphrase[i] = '_';
     }
 
     bindphrase[6] = '\0';
@@ -152,10 +200,10 @@ uint32_t u32_from_bindphrase(char* bindphrase)
     for (uint8_t i = 0; i < 6; i++) {
         uint8_t n = 0;
 
-        if (bindphrase[i] >= 'a' && bindphrase[i] <= 'z' ) {
+        if ((bindphrase[i] >= 'a') && (bindphrase[i] <= 'z')) {
             n = bindphrase[i] - 'a';
         } else
-        if (bindphrase[i] >= '0' && bindphrase[i] <= '9' ) {
+        if ((bindphrase[i] >= '0') && (bindphrase[i] <= '9')) {
             n = 26 + bindphrase[i] - '0';
         } else
         if (bindphrase[i] == '_') {
@@ -195,18 +243,25 @@ void power_optstr_from_power_list(char* Power_optstr, int16_t* power_list, uint8
 {
     memset(Power_optstr, 0, slen);
 
-    char optstr[32+2] = {0};
+    char optstr[44+2] = {0};
 
     for (uint8_t i = 0; i < num; i++) {
-        char s[32];
+        char s[44+2];
         if (power_list[i] == INT16_MAX) break;
 
         if (power_list[i] <= 0) {
             strcpy(s, "min,");
-        } else{
+        } else
+        if (power_list[i] < 1000) {
             u16toBCDstr(power_list[i], s);
             remove_leading_zeros(s);
             strcat(s, " mW,");
+        } else {
+            u16toBCDstr((power_list[i] + 50) / 100, s);
+            remove_leading_zeros(s);
+            uint8_t l = strlen(s);
+            s[l] = s[l-1]; s[l-1] = '.'; s[l+1] = '\0';
+            strcat(s, " W,");
         }
         if (strlen(optstr) + strlen(s) <= slen) { // we are going to cut off the last char, hence <=
             strcat(optstr, s);
@@ -256,15 +311,7 @@ uint32_t version_from_u16(uint16_t version_u16)
 }
 
 
-//-- auxiliary
-
-uint16_t clip_rc(int32_t x)
-{
-    if (x <= 1) return 1;
-    if (x >= 2047) return 2047;
-    return x;
-}
-
+//-- auxiliary functions
 
 void strbufstrcpy(char* res, const char* src, uint16_t len)
 {

@@ -24,6 +24,7 @@ v0.0.00:
 #define UARTF_IRQ_PRIORITY          15 // debug
 #define SX_DIO_EXTI_IRQ_PRIORITY    13
 #define SX2_DIO_EXTI_IRQ_PRIORITY   13
+#define SWUART_TIM_IRQ_PRIORITY     11 // debug on swuart
 #define BUZZER_TIM_IRQ_PRIORITY     14
 
 #include "../Common/common_conf.h"
@@ -31,8 +32,11 @@ v0.0.00:
 #include "../Common/hal/glue.h"
 #include "../modules/stm32ll-lib/src/stdstm32.h"
 #include "../modules/stm32ll-lib/src/stdstm32-peripherals.h"
-#include "../Common/sx-drivers/sx12xx.h"
+#ifdef STM32WL
+#include "../modules/stm32ll-lib/src/stdstm32-subghz.h"
+#endif
 #include "../Common/hal/hal.h"
+#include "../Common/sx-drivers/sx12xx.h"
 #include "../modules/stm32ll-lib/src/stdstm32-delay.h" // these are dependent on hal
 #include "../modules/stm32ll-lib/src/stdstm32-eeprom.h"
 #include "../modules/stm32ll-lib/src/stdstm32-spi.h"
@@ -52,7 +56,11 @@ v0.0.00:
 #include "../modules/stm32ll-lib/src/stdstm32-uarte.h"
 #endif
 #ifdef USE_DEBUG
+#ifdef DEVICE_HAS_DEBUG_SWUART
+#include "../modules/stm32ll-lib/src/stdstm32-uart-sw.h"
+#else
 #include "../modules/stm32ll-lib/src/stdstm32-uartf.h"
+#endif
 #endif
 #ifdef USE_I2C
 #include "../modules/stm32ll-lib/src/stdstm32-i2c.h"
@@ -67,15 +75,13 @@ v0.0.00:
 #include "in.h"
 #include "txstats.h"
 #include "cli.h"
-#include "../Common/buzzer.h"
 #include "mbridge_interface.h" // this includes uart.h as it needs callbacks, declares tMBridge mbridge
-#include "crsf_interface.h" // this includes uart.h as it needs callbacks, declares tTxCrsf crsf
+#include "crsf_interface_tx.h" // this includes uart.h as it needs callbacks, declares tTxCrsf crsf
 
 
 TxStatsBase txstats;
 tComPort com;
 tTxCli cli;
-tBuzzer buzzer;
 
 
 class In : public InBase
@@ -94,7 +100,7 @@ class In : public InBase
         uarte_setprotocol(100000, XUART_PARITY_EVEN, UART_STOPBIT_2);
         if (!inverted) {
             in_set_inverted();
-            gpio_init_af(UARTE_RX_IO, IO_MODE_INPUT_PD, UARTE_IO_AF, IO_SPEED_VERYFAST);
+            gpio_init_af(UARTE_RX_IO, IO_MODE_INPUT_PD, UARTE_IO_AF, IO_SPEED_VERYFAST); //TODO: should go to hal, but UARTE_RX_IO not known to hal at the time
         } else {
             in_set_normal();
             gpio_init_af(UARTE_RX_IO, IO_MODE_INPUT_PU, UARTE_IO_AF, IO_SPEED_VERYFAST);
@@ -181,6 +187,7 @@ void init(void)
     com.Init();
     cli.Init(&com);
     buzzer.Init();
+    fan.Init();
     dbg.Init();
 
     setup_init();
@@ -188,7 +195,7 @@ void init(void)
     sx.Init(); // sx needs Config, so call after setup_init()
     sx2.Init();
 
-    mbridge.Init(Config.UseMbridge); // these affect peripherals, hence do here
+    mbridge.Init(Config.UseMbridge, Config.UseCrsf); // these affect peripherals, hence do here
     crsf.Init(Config.UseCrsf);
 
     __enable_irq();
@@ -278,7 +285,7 @@ volatile uint16_t irq2_status;
 IRQHANDLER(
 void SX_DIO_EXTI_IRQHandler(void)
 {
-    LL_EXTI_ClearFlag_0_31(SX_DIO_EXTI_LINE_x);
+    sx_dio_exti_isr_clearflag();
     irq_status = sx.GetAndClearIrqStatus(SX12xx_IRQ_ALL);
     if (irq_status & SX12xx_IRQ_RX_DONE) {
         if (bind.IsInBind()) {
@@ -296,7 +303,7 @@ void SX_DIO_EXTI_IRQHandler(void)
 IRQHANDLER(
 void SX2_DIO_EXTI_IRQHandler(void)
 {
-    LL_EXTI_ClearFlag_0_31(SX2_DIO_EXTI_LINE_x);
+    sx2_dio_exti_isr_clearflag();
     irq2_status = sx2.GetAndClearIrqStatus(SX12xx_IRQ_ALL);
     if (irq2_status & SX12xx_IRQ_RX_DONE) {
         if (bind.IsInBind()) {
@@ -668,6 +675,7 @@ RESTARTCONTROLLER:
   in.Configure(Setup.Tx.InMode);
   mavlink.Init();
   sx_serial.Init(&serial, &mbridge, &serial2);
+  fan.SetPower(sx.RfPower_dbm());
   whileTransmit.Init();
 
   disp.Init();
@@ -682,7 +690,7 @@ RESTARTCONTROLLER:
 
     if (doSysTask) {
       // when we do long tasks, like display transfer, we miss ticks, so we need to catch up
-      // the commands below must not be sensitive to strict ms timming
+      // the commands below must not be sensitive to strict ms timing
       doSysTask--; // doSysTask = 0;
 
       if (connect_tmo_cnt) {
@@ -796,6 +804,7 @@ IF_ANTENNA1(
         link_state = LINK_STATE_IDLE;
         link_rx1_status = RX_STATUS_NONE;
         link_rx2_status = RX_STATUS_NONE;
+        DBG_MAIN_SLIM(dbg.puts("?");)
       }
 
       if (irq_status & SX12xx_IRQ_RX_DONE) {
@@ -965,7 +974,6 @@ IF_ANTENNA2(
     //-- Update channels, MBridge handling, Crsf handling, In handling, etc
 
 #ifdef DEVICE_HAS_JRPIN5
-    uint8_t mbstate, mbcmd; // for some reason it gives an error when put inside IF_MBRIDGE()
 IF_MBRIDGE(
     // mBridge sends channels in regular 20 ms intervals, this we can use as sync
     if (mbridge.ChannelsUpdated(&rcData)) {
@@ -978,21 +986,19 @@ IF_MBRIDGE(
       mbridge.TelemetryStart();
     }
     // we send a mbridge cmd twice per 20 ms cycle, we can't send too fast, in otx the receive buffer can hold 64 cmds
-    if (mbridge.TelemetryUpdateState(&mbstate)) {
-      switch (mbstate) {
-      case 1: mbridge_send_LinkStats(); break;
-      case 6: case 9:
-        if (mbridge.CommandInFifo(&mbcmd)) {
-          switch (mbcmd) {
-          case MBRIDGE_CMD_DEVICE_ITEM_TX: mbridge_send_DeviceItemTx(); break;
-          case MBRIDGE_CMD_DEVICE_ITEM_RX: mbridge_send_DeviceItemRx(); break;
-          case MBRIDGE_CMD_PARAM_ITEM: mbridge_send_ParamItem(); break;
-          case MBRIDGE_CMD_INFO: mbridge_send_Info(); break;
-          }
-        }
+    uint8_t mbtask; uint8_t mbcmd;
+    if (mbridge.TelemetryUpdate(&mbtask)) {
+      switch (mbtask) {
+      case TXBRIDGE_SEND_LINK_STATS: mbridge_send_LinkStats(); break;
+      case TXBRIDGE_SEND_CMD:
+        if (mbridge.CommandInFifo(&mbcmd)) mbridge_send_cmd(mbcmd);
         break;
       }
     }
+);
+IF_MBRIDGE_OR_CRSF( // to allow crsf mbridge emulation
+    // handle an incoming command
+    uint8_t mbcmd;
     if (mbridge.CommandReceived(&mbcmd)) {
       switch (mbcmd) {
       case MBRIDGE_CMD_REQUEST_INFO:
@@ -1032,22 +1038,44 @@ IF_MBRIDGE(
     }
 );
 IF_CRSF(
-    uint8_t packet_idx;
-    if (crsf.TelemetryUpdate(&packet_idx)) {
-      switch (packet_idx) {
-      case 1: crsf_send_LinkStatistics(); break;
-      case 2: crsf_send_LinkStatisticsTx(); break;
-      case 3: crsf_send_LinkStatisticsRx(); break;
-      case 4:
-        if (Setup.Tx.SerialLinkMode == SERIAL_LINK_MODE_MAVLINK) crsf.SendTelemetryFrame();
-        break;
-      }
-    }
-    if (crsf.Update(&rcData)) {
+    if (crsf.ChannelsUpdated(&rcData)) {
       // update channels
       if (Setup.Tx.ChannelsSource == CHANNEL_SOURCE_CRSF) {
         channelOrder.Set(Setup.Tx.ChannelOrder); //TODO: better than before, but still better place!?
         channelOrder.Apply(&rcData);
+      }
+    }
+    uint8_t crsftask; uint8_t crsfcmd;
+    uint8_t mbcmd; static uint8_t do_cnt = 0; // if it's to fast lua script gets out of sync
+    uint8_t* buf; uint8_t len;
+    if (crsf.TelemetryUpdate(&crsftask, Config.frame_rate_ms)) {
+      switch (crsftask) {
+      case TXCRSF_SEND_LINK_STATISTICS: crsf_send_LinkStatistics(); do_cnt = 2; break;
+      case TXCRSF_SEND_LINK_STATISTICS_TX: crsf_send_LinkStatisticsTx(); break;
+      case TXCRSF_SEND_LINK_STATISTICS_RX: crsf_send_LinkStatisticsRx(); break;
+      case TXCRSF_SEND_TELEMETRY_FRAME:
+        if (do_cnt && mbridge.CommandInFifo(&mbcmd)) {
+          mbridge_send_cmd(mbcmd);
+        }
+        if (mbridge.CrsfFrameAvailable(&buf, &len)) {
+            crsf.SendMBridgeFrame(buf, len);
+        } else
+        if (Setup.Tx.SerialLinkMode == SERIAL_LINK_MODE_MAVLINK) {
+          crsf.SendTelemetryFrame();
+        }
+        DECl(do_cnt);
+        break;
+      }
+    }
+    if (crsf.CommandReceived(&crsfcmd)) {
+      switch (crsfcmd) {
+      case TXCRSF_CMD_MODELID_SET:
+dbg.puts("\ncrsf model select id "); dbg.puts(u8toBCD_s(crsf.GetCmdDataPtr()[0]));
+          break;
+      case TXCRSF_CMD_MBRIDGE_IN:
+dbg.puts("\ncrsf mbridge ");
+          mbridge.ParseCrsfFrame(crsf.GetPayloadPtr(), crsf.GetPayloadLen(), micros());
+          break;
       }
     }
 );
@@ -1062,15 +1090,15 @@ IF_CRSF(
     }
 #endif
 
-    //-- do mavlink
+    //-- Do mavlink
 
     mavlink.Do();
 
-    //-- do WhileTransmit stuff
+    //-- Do WhileTransmit stuff
 
     whileTransmit.Do();
 
-    //-- cli task
+    //-- Handle cli task
 
     switch (cli.Task()) {
     case CLI_TASK_RX_PARAM_SET:

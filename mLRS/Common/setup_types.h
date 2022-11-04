@@ -51,6 +51,7 @@ typedef enum {
     SERIAL_BAUDRATE_38400,
     SERIAL_BAUDRATE_57600,
     SERIAL_BAUDRATE_115200,
+    SERIAL_BAUDRATE_230400,
     SERIAL_BAUDRATE_NUM,
 } SERIAL_BAUDRATE_ENUM;
 
@@ -72,10 +73,20 @@ typedef enum {
 
 typedef enum {
     SEND_RADIO_STATUS_OFF = 0,
-    SEND_RADIO_STATUS_ON,
-    SEND_RADIO_STATUS_ON_W_TXBUF,
+    SEND_RADIO_STATUS_1HZ,
+    SEND_RADIO_STATUS_2HZ,
+    SEND_RADIO_STATUS_3HZ,
+    SEND_RADIO_STATUS_4HZ,
     SEND_RADIO_STATUS_NUM,
 } SEND_RADIO_STATUS_ENUM;
+
+
+typedef enum {
+    RADIO_STATUS_METHOD_DEFAULT = 0,
+    RADIO_STATUS_METHOD_W_TXBUF,
+    RADIO_STATUS_METHOD_PX4,
+    RADIO_STATUS_METHOD_NUM,
+} RADIO_STATUS_METHOD_ENUM;
 
 
 //-- Tx only
@@ -154,6 +165,14 @@ typedef enum {
 } RX_FAILSAFE_MODE_ENUM;
 
 
+typedef enum {
+    SEND_RC_CHANNELS_OFF = 0,
+    SEND_RC_CHANNELS_OVERRIDE,
+    SEND_RC_CHANNELS_RCCHANNELS,
+    SEND_RC_CHANNELS_NUM,
+} RX_SEND_RCCHANNELS_ENUM;
+
+
 //-------------------------------------------------------
 // Config Enums
 //-------------------------------------------------------
@@ -199,7 +218,7 @@ typedef struct
     uint8_t CliLineEnd;
 
     uint8_t spare[9];
-} tTxSetup;
+} tTxSetup; // 20 bytes
 
 
 typedef struct
@@ -214,12 +233,14 @@ typedef struct
     uint8_t SerialLinkMode;
     uint8_t SendRadioStatus;
     uint8_t Buzzer;
+    uint8_t SendRcChannels;
+    uint8_t RadioStatusMethod;
 
-    uint8_t spare[10];
+    uint8_t spare[8];
 
     int8_t FailsafeOutChannelValues_Ch1_Ch12[12]; // -120 .. +120
     uint8_t FailsafeOutChannelValues_Ch13_Ch16[4]; // 0,1,2 = -120, 0, +120
-} tRxSetup;
+} tRxSetup; // 36 bytes
 
 
 #define SETUP_MARKER_STR      "SetupStartMarker"
@@ -255,14 +276,14 @@ typedef struct
     uint16_t FrequencyBand_allowed_mask;
     uint16_t Mode_allowed_mask;
 
-    char Tx_Power_optstr[32+1];
+    char Tx_Power_optstr[44+1];
     uint16_t Tx_Diversity_allowed_mask;
     uint16_t Tx_ChannelsSource_allowed_mask;
     uint16_t Tx_InMode_allowed_mask;
     uint16_t Tx_SerialDestination_allowed_mask;
     uint16_t Tx_Buzzer_allowed_mask;
 
-    char Rx_Power_optstr[32+1];
+    char Rx_Power_optstr[44+1];
     uint16_t Rx_Diversity_allowed_mask;
     uint16_t Rx_OutMode_allowed_mask;
     uint16_t Rx_Buzzer_allowed_mask;

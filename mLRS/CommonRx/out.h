@@ -45,7 +45,7 @@ class OutBase
   public:
     void Init(tRxSetup* _setup);
 
-    void Configure(uint8_t new_config, uint8_t new_rssi_channel_mode, uint8_t new_failsafe_mode);
+    void Configure(uint8_t new_config);
 
     void Do(uint16_t tnow_us);
 
@@ -55,6 +55,8 @@ class OutBase
 
     void SetChannelOrder(uint8_t new_channel_order);
 
+    tRcData* GetRcDataPtr(void) { return &rc; }
+
   private:
     void send_sbus_rcdata(tRcData* rc, bool frame_lost, bool failsafe);
     void send_crsf_rcdata(tRcData* rc);
@@ -63,7 +65,7 @@ class OutBase
 
     void putbuf(uint8_t* buf, uint16_t len);
 
-    virtual void putc(char c);
+    virtual void putc(char c) {}
     virtual bool config_sbus(bool enable_flag) { return false; }
     virtual bool config_crsf(bool enable_flag) { return false; }
     virtual bool config_sbus_inverted(bool enable_flag) { return false; }
@@ -79,8 +81,7 @@ class OutBase
     uint16_t link_stats_tstart_us;
     tOutLinkStats link_stats;
 
-    uint8_t rssi_channel;
-    uint8_t failsafe_mode;
+    tRcData rc;
 };
 
 

@@ -47,7 +47,7 @@
 //#define UARTC_USE_RX
 //#define UARTC_RXBUFSIZE           512
 
-#define UART_USE_UART2 // SBus
+#define UART_USE_UART2 // out pin
 #define UART_BAUD                 100000 // SBus normal baud rate, is being set later anyhow
 #define UART_USE_TX
 #define UART_TXBUFSIZE            256 // 512
@@ -83,11 +83,6 @@ void sx_init_gpio(void)
   gpio_init(SX_BUSY, IO_MODE_INPUT_PU, IO_SPEED_VERYFAST);
   gpio_init(SX_TX_EN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_VERYFAST);
   gpio_init(SX_RX_EN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_VERYFAST);
-}
-
-bool sx_dio_read(void)
-{
-  return (gpio_read_activehigh(SX_DIO1)) ? true : false;
 }
 
 bool sx_busy_read(void)
@@ -127,6 +122,11 @@ void sx_dio_enable_exti_isr(void)
   LL_EXTI_EnableIT_0_31(SX_DIO_EXTI_LINE_x);
 }
 
+void sx_dio_exti_isr_clearflag(void)
+{
+  LL_EXTI_ClearFlag_0_31(SX_DIO_EXTI_LINE_x);
+}
+
 
 //-- SX12xx II & SPIB
 
@@ -155,11 +155,6 @@ void sx2_init_gpio(void)
   gpio_init(SX2_BUSY, IO_MODE_INPUT_PU, IO_SPEED_VERYFAST);
   gpio_init(SX2_TX_EN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_VERYFAST);
   gpio_init(SX2_RX_EN, IO_MODE_OUTPUT_PP_LOW, IO_SPEED_VERYFAST);
-}
-
-bool sx2_dio_read(void)
-{
-  return (gpio_read_activehigh(SX2_DIO1)) ? true : false;
 }
 
 bool sx2_busy_read(void)
@@ -199,8 +194,13 @@ void sx2_dio_enable_exti_isr(void)
   LL_EXTI_EnableIT_0_31(SX2_DIO_EXTI_LINE_x);
 }
 
+void sx2_dio_exti_isr_clearflag(void)
+{
+  LL_EXTI_ClearFlag_0_31(SX2_DIO_EXTI_LINE_x);
+}
 
-//-- SBus output pin
+
+//-- Out port
 
 #define OUT_XOR                   IO_PB9
 
@@ -273,6 +273,8 @@ void led_red_toggle(void) { gpio_toggle(LED_RED); }
 #define POWER_GAIN_DBM            27 // gain of a PA stage if present
 #define POWER_SX1280_MAX_DBM      SX1280_POWER_0_DBM // maximum allowed sx power
 #define POWER_USE_DEFAULT_RFPOWER_CALC
+
+#define RFPOWER_DEFAULT           1 // index into rfpower_list array
 
 const rfpower_t rfpower_list[] = {
     { .dbm = POWER_0_DBM, .mW = 1 },
